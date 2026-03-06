@@ -19,7 +19,7 @@ MessageHandler, ContextTypes, filters,
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 
-BOT_TOKEN     = os.environ.get(“BOT_TOKEN”, “YOUR_BOT_TOKEN_HERE”)
+BOT_TOKEN     = os.environ.get(“BOT_TOKEN”, “8535145906:AAHLvTTpdFlEXvC0ZBA08RxM2Ulj-HiaABk”)
 DB_PATH       = “payway_transactions.db”
 EXCHANGE_RATE = 4100                    # 1 USD = 4100 KHR
 TZ            = ZoneInfo(“Asia/Phnom_Penh”)
