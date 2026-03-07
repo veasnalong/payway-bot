@@ -21,7 +21,7 @@ from telegram.ext import (
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 BOT_TOKEN     = os.environ.get("BOT_TOKEN", "8535145906:AAHLvTTpdFlEXvC0ZBA08RxM2Ulj-HiaABk")
 DB_PATH       = "payway_transactions.db"
-EXCHANGE_RATE = 4100
+EXCHANGE_RATE = 4000
 TZ            = ZoneInfo("Asia/Phnom_Penh")
 DAILY_SUMMARY_HOUR   = 19   # 9 PM Cambodia time
 DAILY_SUMMARY_MINUTE = 0
