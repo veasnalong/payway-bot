@@ -268,7 +268,7 @@ async def auto_daily_summary_loop(bot: Bot):
                 logger.error(f"Failed to send to {chat_id}: {e}")
 
 # ── MAIN ───────────────────────────────────────────────────────────────────────
-async def main():
+def main():
     init_db()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -279,11 +279,14 @@ async def main():
     app.add_handler(CommandHandler("report_monthly", report_monthly))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
-    # Start auto daily summary in background
-    asyncio.create_task(auto_daily_summary_loop(app.bot))
+    # Start auto daily summary as a post_init hook
+    async def post_init(application):
+        asyncio.create_task(auto_daily_summary_loop(application.bot))
+
+    app.post_init = post_init
 
     logger.info("Bot is running... Press Ctrl+C to stop.")
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
