@@ -204,8 +204,9 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for t in txns:
         save_transaction(t["payer"], t["account"], t["amount"], t["currency"],
             t["trx_id"], t["apv"], t["paid_at"], update.effective_chat.id)
-    if txns:
-        await update.message.reply_text(f"Recorded {len(txns)} payment(s).")
+    # Silently record - no reply to avoid flood control
+
+
 
 async def report_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     now = datetime.now(TZ)
