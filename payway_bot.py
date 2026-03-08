@@ -19,11 +19,11 @@ from telethon import TelegramClient, events
 
 API_ID    = int(os.environ.get(“API_ID”,   “6853725”))
 API_HASH  =     os.environ.get(“API_HASH”, “ad999703e58d06143d9b05f9a0e8ac82”)
-PHONE     =     os.environ.get(“PHONE”,    “+855968888223”)  # your phone number
+PHONE     =     os.environ.get(“PHONE”,    “+85968888223”)  # your phone number
 DB_PATH       = “payway_transactions.db”
-EXCHANGE_RATE = 4000
+EXCHANGE_RATE = 4100
 TZ            = ZoneInfo(“Asia/Phnom_Penh”)
-DAILY_SUMMARY_HOUR   = 19
+DAILY_SUMMARY_HOUR   = 21
 DAILY_SUMMARY_MINUTE = 0
 
 # ───────────────────────────────────────────────────────────────────────────────
