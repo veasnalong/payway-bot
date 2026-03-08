@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telethon import TelegramClient, events
 
-API_ID   = int(os.environ.get(‘API_ID’, ‘0’))
-API_HASH = os.environ.get(‘API_HASH’, ‘YOUR_API_HASH’)
-PHONE    = os.environ.get(‘PHONE’, ‘+855xxxxxxxxx’)
+API_ID   = int(os.environ.get(‘API_ID’, ‘6853725’))
+API_HASH = os.environ.get(‘API_HASH’, ‘ad999703e58d06143d9b05f9a0e8ac82’)
+PHONE    = os.environ.get(‘PHONE’, ‘+855968888223’)
 DB_PATH  = ‘payway_transactions.db’
 EXCHANGE_RATE = 4100
 TZ = ZoneInfo(‘Asia/Phnom_Penh’)
