@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-“””
-PayWay ABA Report - Userbot (Telethon)
-Logs in as YOUR Telegram account - can read ALL messages including from bots.
-
-pip install telethon
-“””
-
 import re
 import sqlite3
 import logging
@@ -15,23 +7,17 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telethon import TelegramClient, events
 
-# ── CONFIG ─────────────────────────────────────────────────────────────────────
-
 API_ID    = int(os.environ.get(“API_ID”,   “6853725”))
 API_HASH  =     os.environ.get(“API_HASH”, “ad999703e58d06143d9b05f9a0e8ac82”)
 PHONE     =     os.environ.get(“PHONE”,    “+85968888223”)  # your phone number
-DB_PATH       = “payway_transactions.db”
+DB_PATH   = “payway_transactions.db”
 EXCHANGE_RATE = 4100
-TZ            = ZoneInfo(“Asia/Phnom_Penh”)
+TZ        = ZoneInfo(“Asia/Phnom_Penh”)
 DAILY_SUMMARY_HOUR   = 21
 DAILY_SUMMARY_MINUTE = 0
 
-# ───────────────────────────────────────────────────────────────────────────────
-
 logging.basicConfig(format=”%(asctime)s [%(levelname)s] %(message)s”, level=logging.INFO)
 logger = logging.getLogger(**name**)
-
-# ── DATABASE ───────────────────────────────────────────────────────────────────
 
 def init_db():
 con = sqlite3.connect(DB_PATH)
@@ -66,10 +52,10 @@ INSERT OR IGNORE INTO transactions
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 “””, (payer, account, amount, currency, trx_id, apv, paid_at.isoformat(), chat_id))
 con.commit()
-logger.info(f”Saved: {payer} {currency}{amount} trx={trx_id}”)
+logger.info(“Saved: %s %s%s trx=%s”, payer, currency, amount, trx_id)
 return True
 except Exception as e:
-logger.error(f”DB error: {e}”)
+logger.error(“DB error: %s”, e)
 return False
 finally:
 con.close()
@@ -97,8 +83,6 @@ con.execute(“INSERT OR IGNORE INTO auto_report_chats (chat_id) VALUES (?)”, 
 con.commit()
 con.close()
 
-# ── PARSER ─────────────────────────────────────────────────────────────────────
-
 PAYWAY_USD_RE = re.compile(
 r”$([0-9,]+(?:.[0-9]+)?)\s+paid by\s+(.+?)\s+((*\d+))”
 r”\s+on\s+(\w+ \d{1,2}),\s+(\d{1,2}:\d{2}\s+[AP]M)”
@@ -112,12 +96,10 @@ r”.*?Trx. ID:\s*(\d+),\s*APV:\s*(\d+)”,
 re.DOTALL | re.IGNORECASE,
 )
 
-def _parse_dt(date_str, time_str):
+def parse_dt(date_str, time_str):
 year = datetime.now(TZ).year
 try:
-return datetime.strptime(
-f”{date_str} {year} {time_str}”, “%b %d %Y %I:%M %p”
-).replace(tzinfo=TZ)
+return datetime.strptime(”%s %s %s” % (date_str, year, time_str), “%b %d %Y %I:%M %p”).replace(tzinfo=TZ)
 except ValueError:
 return datetime.now(TZ)
 
@@ -126,34 +108,34 @@ results = []
 seen = set()
 for m in PAYWAY_USD_RE.finditer(text):
 trx_id = m.group(6)
-if trx_id in seen: continue
+if trx_id in seen:
+continue
 seen.add(trx_id)
 amt = float(m.group(1).replace(”,”, “”))
 currency = “USD” if (”.” in m.group(1) and amt < 1000) else “KHR”
 results.append({“payer”: m.group(2).strip(), “account”: m.group(3),
 “amount”: amt, “currency”: currency, “trx_id”: trx_id,
-“apv”: m.group(7), “paid_at”: _parse_dt(m.group(4), m.group(5))})
+“apv”: m.group(7), “paid_at”: parse_dt(m.group(4), m.group(5))})
 for m in PAYWAY_KHR_RE.finditer(text):
 trx_id = m.group(7)
-if trx_id in seen: continue
+if trx_id in seen:
+continue
 seen.add(trx_id)
 amt = float((m.group(1) or m.group(2)).replace(”,”, “”))
 results.append({“payer”: m.group(3).strip(), “account”: m.group(4),
 “amount”: amt, “currency”: “KHR”, “trx_id”: trx_id,
-“apv”: m.group(8), “paid_at”: _parse_dt(m.group(5), m.group(6))})
+“apv”: m.group(8), “paid_at”: parse_dt(m.group(5), m.group(6))})
 return results
 
-# ── FORMATTER ──────────────────────────────────────────────────────────────────
-
-def fmt_usd(n): return f”${n:,.2f}”
-def fmt_khr(n): return f”KHR {n:,.0f}”
+def fmt_usd(n): return “$%s” % “{:,.2f}”.format(n)
+def fmt_khr(n): return “KHR %s” % “{:,.0f}”.format(n)
 def to_usd(a, c): return a if c == “USD” else a / EXCHANGE_RATE
 def to_khr(a, c): return a if c == “KHR” else a * EXCHANGE_RATE
 
 def build_report(rows, title):
 if not rows:
-return f”No transactions found\n{title}”
-lines = [f”=== {title} ===”, “”]
+return “No transactions found\n” + title
+lines = [”=== “ + title + “ ===”, “”]
 total_usd_paid = total_khr_paid = 0.0
 total_usd_equiv = total_khr_equiv = 0.0
 count_usd = count_khr = 0
@@ -166,39 +148,35 @@ total_khr_equiv += khr
 if currency == “USD”:
 total_usd_paid += amount
 count_usd += 1
-amt_str = f”USD {fmt_usd(amount)}  ~  {fmt_khr(khr)}”
+amt_str = “USD “ + fmt_usd(amount) + “  ~  “ + fmt_khr(khr)
 else:
 total_khr_paid += amount
 count_khr += 1
-amt_str = f”{fmt_khr(amount)}  ~  {fmt_usd(usd)}”
-lines.append(f”{i}. {paid_at.strftime(’%d %b %Y  %H:%M’)}”)
-lines.append(f”   {payer} {account}”)
-lines.append(f”   {amt_str}”)
+amt_str = fmt_khr(amount) + “  ~  “ + fmt_usd(usd)
+lines.append(”%d. %s” % (i, paid_at.strftime(”%d %b %Y  %H:%M”)))
+lines.append(”   “ + payer + “ “ + account)
+lines.append(”   “ + amt_str)
 lines.append(””)
 lines.append(”=========================”)
-lines.append(f”Total Transactions : {len(rows)}”)
+lines.append(“Total Transactions : %d” % len(rows))
 lines.append(””)
 if count_khr > 0:
-lines.append(f”KHR Payments ({count_khr} txn)”)
-lines.append(f”  Paid   : {fmt_khr(total_khr_paid)}”)
-lines.append(f”  In USD : {fmt_usd(total_khr_paid / EXCHANGE_RATE)}”)
+lines.append(“KHR Payments (%d txn)” % count_khr)
+lines.append(”  Paid   : “ + fmt_khr(total_khr_paid))
+lines.append(”  In USD : “ + fmt_usd(total_khr_paid / EXCHANGE_RATE))
 lines.append(””)
 if count_usd > 0:
-lines.append(f”USD Payments ({count_usd} txn)”)
-lines.append(f”  Paid   : {fmt_usd(total_usd_paid)}”)
-lines.append(f”  In KHR : {fmt_khr(total_usd_paid * EXCHANGE_RATE)}”)
+lines.append(“USD Payments (%d txn)” % count_usd)
+lines.append(”  Paid   : “ + fmt_usd(total_usd_paid))
+lines.append(”  In KHR : “ + fmt_khr(total_usd_paid * EXCHANGE_RATE))
 lines.append(””)
 lines.append(”———————––”)
-lines.append(f”Grand Total USD : {fmt_usd(total_usd_equiv)}”)
-lines.append(f”Grand Total KHR : {fmt_khr(total_khr_equiv)}”)
-lines.append(f”Rate            : $1 = KHR {EXCHANGE_RATE:,}”)
+lines.append(“Grand Total USD : “ + fmt_usd(total_usd_equiv))
+lines.append(“Grand Total KHR : “ + fmt_khr(total_khr_equiv))
+lines.append(“Rate            : $1 = KHR %s” % “{:,}”.format(EXCHANGE_RATE))
 return “\n”.join(lines)
 
-# ── USERBOT HANDLERS ───────────────────────────────────────────────────────────
-
-# Log in as your phone account - reads ALL messages including from bots
-
-client = TelegramClient(“payway_userbot_session”, API_ID, API_HASH)
+client = TelegramClient(“payway_session”, API_ID, API_HASH)
 
 @client.on(events.NewMessage)
 async def on_any_message(event):
@@ -206,18 +184,16 @@ text = event.raw_text or “”
 txns = parse_payway(text)
 if txns:
 for t in txns:
-save_transaction(
-t[“payer”], t[“account”], t[“amount”], t[“currency”],
-t[“trx_id”], t[“apv”], t[“paid_at”], event.chat_id,
-)
-logger.info(f”Recorded {len(txns)} PayWay payment(s) in chat {event.chat_id}”)
+save_transaction(t[“payer”], t[“account”], t[“amount”], t[“currency”],
+t[“trx_id”], t[“apv”], t[“paid_at”], event.chat_id)
+logger.info(“Recorded %d payment(s) in chat %s”, len(txns), event.chat_id)
 
 @client.on(events.NewMessage(pattern=r”^/report_daily”))
 async def report_daily(event):
 now = datetime.now(TZ)
 start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 rows = query_transactions(start, start + timedelta(days=1), event.chat_id)
-await event.reply(build_report(rows, f”Daily Report\n{now.strftime(’%A, %d %b %Y’)}”))
+await event.reply(build_report(rows, “Daily Report\n” + now.strftime(”%A, %d %b %Y”)))
 
 @client.on(events.NewMessage(pattern=r”^/report_weekly”))
 async def report_weekly(event):
@@ -225,7 +201,8 @@ now = datetime.now(TZ)
 start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 end = start + timedelta(weeks=1)
 rows = query_transactions(start, end, event.chat_id)
-title = f”Weekly Report\n{start.strftime(’%d %b’)} - {(start + timedelta(days=6)).strftime(’%d %b %Y’)}”
+end_d = start + timedelta(days=6)
+title = “Weekly Report\n” + start.strftime(”%d %b”) + “ - “ + end_d.strftime(”%d %b %Y”)
 await event.reply(build_report(rows, title))
 
 @client.on(events.NewMessage(pattern=r”^/report_monthly”))
@@ -234,7 +211,7 @@ now = datetime.now(TZ)
 start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 end = start.replace(month=now.month % 12 + 1) if now.month < 12 else start.replace(year=now.year + 1, month=1)
 rows = query_transactions(start, end, event.chat_id)
-await event.reply(build_report(rows, f”Monthly Report\n{now.strftime(’%B %Y’)}”))
+await event.reply(build_report(rows, “Monthly Report\n” + now.strftime(”%B %Y”)))
 
 @client.on(events.NewMessage(pattern=r”^/help|^/start”))
 async def cmd_help(event):
@@ -246,10 +223,8 @@ await event.reply(
 “/report_daily - today\n”
 “/report_weekly - this week\n”
 “/report_monthly - this month\n\n”
-f”Auto daily summary at {DAILY_SUMMARY_HOUR:02d}:{DAILY_SUMMARY_MINUTE:02d} every night.”
+“Auto daily summary at %02d:%02d every night.” % (DAILY_SUMMARY_HOUR, DAILY_SUMMARY_MINUTE)
 )
-
-# ── AUTO DAILY SUMMARY ─────────────────────────────────────────────────────────
 
 async def auto_daily_summary_loop():
 while True:
@@ -258,28 +233,25 @@ target = now.replace(hour=DAILY_SUMMARY_HOUR, minute=DAILY_SUMMARY_MINUTE, secon
 if now >= target:
 target += timedelta(days=1)
 wait_seconds = (target - now).total_seconds()
-logger.info(f”Next auto summary in {wait_seconds/3600:.1f} hours”)
+logger.info(“Next auto summary in %.1f hours”, wait_seconds / 3600)
 await asyncio.sleep(wait_seconds)
 now = datetime.now(TZ)
 start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-title = f”Auto Daily Summary\n{now.strftime(’%A, %d %b %Y’)}”
+title = “Auto Daily Summary\n” + now.strftime(”%A, %d %b %Y”)
 for chat_id in get_all_auto_report_chats():
 rows = query_transactions(start, start + timedelta(days=1), chat_id)
 try:
 await client.send_message(chat_id, build_report(rows, title))
-logger.info(f”Sent auto daily summary to {chat_id}”)
+logger.info(“Sent auto daily summary to %s”, chat_id)
 except Exception as e:
-logger.error(f”Failed to send to {chat_id}: {e}”)
-
-# ── MAIN ───────────────────────────────────────────────────────────────────────
+logger.error(“Failed to send to %s: %s”, chat_id, e)
 
 async def main():
 init_db()
-# Login with phone number (not bot token)
 await client.start(phone=PHONE)
 me = await client.get_me()
-logger.info(f”Logged in as: {me.first_name} (+{me.phone})”)
-logger.info(“Listening for PayWay ABA messages in all groups…”)
+logger.info(“Logged in as: %s”, me.first_name)
+logger.info(“Listening for PayWay ABA messages…”)
 asyncio.create_task(auto_daily_summary_loop())
 await client.run_until_disconnected()
 
