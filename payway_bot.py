@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telethon import TelegramClient, events
 
-API_ID   = int(os.environ.get(‘API_ID’, 6853725))
+API_ID   = int(os.environ.get(‘API_ID’, '6853725'))
 API_HASH = os.environ.get(‘API_HASH’, ‘ad999703e58d06143d9b05f9a0e8ac82’)
 PHONE    = os.environ.get(‘PHONE’, ‘+855968888223’)
 DB_PATH  = ‘payway_transactions.db’
