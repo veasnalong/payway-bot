@@ -100,33 +100,35 @@ client = TelegramClient(‘payway_session’, API_ID, API_HASH)
 
 @client.on(events.NewMessage)
 async def on_msg(event):
-txns = parse(event.raw_text or ‘’)
-for t in txns:
-save_tx(t[‘payer’],t[‘account’],t[‘amount’],t[‘currency’],t[‘trx_id’],t[‘apv’],t[‘paid_at’],event.chat_id)
-if txns: logger.info(‘Recorded %d payment(s)’, len(txns))
-
-@client.on(events.NewMessage(pattern=r’^/report_daily’))
-async def daily(event):
+text = event.raw_text or ‘’
+txt = text.strip().lower()
+# Handle commands - works in groups, private, with or without @botname
+if txt.startswith(’/report_daily’):
 now=datetime.now(TZ); s=now.replace(hour=0,minute=0,second=0,microsecond=0)
 await event.reply(build_report(query(s,s+timedelta(days=1),event.chat_id),‘Daily Report - ‘+now.strftime(’%A %d %b %Y’)))
-
-@client.on(events.NewMessage(pattern=r’^/report_weekly’))
-async def weekly(event):
+return
+if txt.startswith(’/report_weekly’):
 now=datetime.now(TZ)
 s=(now-timedelta(days=now.weekday())).replace(hour=0,minute=0,second=0,microsecond=0)
 await event.reply(build_report(query(s,s+timedelta(weeks=1),event.chat_id),‘Weekly Report - ‘+s.strftime(’%d %b’)+’ to ‘+(s+timedelta(days=6)).strftime(’%d %b %Y’)))
-
-@client.on(events.NewMessage(pattern=r’^/report_monthly’))
-async def monthly(event):
+return
+if txt.startswith(’/report_monthly’):
 now=datetime.now(TZ); s=now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
 e=s.replace(month=now.month%12+1) if now.month<12 else s.replace(year=now.year+1,month=1)
 await event.reply(build_report(query(s,e,event.chat_id),‘Monthly Report - ‘+now.strftime(’%B %Y’)))
-
-@client.on(events.NewMessage(pattern=r’^/help|^/start’))
-async def help_cmd(event):
+return
+if txt.startswith(’/start’) or txt.startswith(’/help’):
 reg_chat(event.chat_id)
-msg = ‘PayWay Report Bot’ + chr(10)*2 + ‘Commands:’ + chr(10) + ‘/report_daily’ + chr(10) + ‘/report_weekly’ + chr(10) + ‘/report_monthly’ + chr(10)*2 + ‘Auto summary at %02d:%02d nightly’%(DAILY_HOUR,DAILY_MINUTE)
+msg = (‘PayWay Report Bot’+chr(10)+chr(10)+‘Commands:’+chr(10)
++’/report_daily’+chr(10)+’/report_weekly’+chr(10)+’/report_monthly’
++chr(10)+chr(10)+‘Auto summary at %02d:%02d nightly’%(DAILY_HOUR,DAILY_MINUTE))
 await event.reply(msg)
+return
+# Record PayWay payments silently
+txns = parse(text)
+for t in txns:
+save_tx(t[‘payer’],t[‘account’],t[‘amount’],t[‘currency’],t[‘trx_id’],t[‘apv’],t[‘paid_at’],event.chat_id)
+if txns: logger.info(‘Recorded %d payment(s) in chat %s’, len(txns), event.chat_id)
 
 async def daily_loop():
 while True:
