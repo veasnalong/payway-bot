@@ -16,6 +16,23 @@ if (!TOKEN) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+// Helper: split long messages into chunks under Telegram's 4096 char limit
+async function sendLong(chatId, text, options = {}) {
+  const LIMIT = 4000;
+  if (text.length <= LIMIT) return bot.sendMessage(chatId, text, options);
+  const lines = text.split("\n");
+  let chunk = "";
+  for (const line of lines) {
+    if ((chunk + "\n" + line).length > LIMIT) {
+      await bot.sendMessage(chatId, chunk, options);
+      chunk = line;
+    } else {
+      chunk = chunk ? chunk + "\n" + line : line;
+    }
+  }
+  if (chunk) await bot.sendMessage(chatId, chunk, options);
+}
+
 console.log('🤖 ABA Payway Summary Bot is running...');
 
 // ─── Listen to all messages in groups ─────────────────────────────────────────
@@ -49,7 +66,7 @@ bot.onText(/\/summary(@\w+)?$/, (msg) => {
   const today = getTodayKey();
   const transactions = store.getTransactions(chatId, today);
   const reply = formatSummary(transactions, 'Today', today);
-  bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
+  sendLong(chatId, reply, { parse_mode: 'HTML' });
 });
 
 // /summary_week — this week
@@ -58,7 +75,7 @@ bot.onText(/\/summary_week(@\w+)?$/, (msg) => {
   const days = getLastNDays(7);
   const transactions = days.flatMap(d => store.getTransactions(chatId, d));
   const reply = formatSummary(transactions, 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]);
-  bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
+  sendLong(chatId, reply, { parse_mode: 'HTML' });
 });
 
 // /summary_month — this month
@@ -68,7 +85,7 @@ bot.onText(/\/summary_month(@\w+)?$/, (msg) => {
   const transactions = days.flatMap(d => store.getTransactions(chatId, d));
   const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
   const reply = formatSummary(transactions, label, '');
-  bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
+  sendLong(chatId, reply, { parse_mode: 'HTML' });
 });
 
 // /list — detailed list of today's transactions
@@ -77,7 +94,7 @@ bot.onText(/\/list(@\w+)?$/, (msg) => {
   const today = getTodayKey();
   const transactions = store.getTransactions(chatId, today);
   const reply = formatDetailedList(transactions, 'Today');
-  bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
+  sendLong(chatId, reply, { parse_mode: 'HTML' });
 });
 
 // /list YYYY-MM-DD — list for a specific date
@@ -86,7 +103,7 @@ bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, (msg, match) => {
   const date = match[2];
   const transactions = store.getTransactions(chatId, date);
   const reply = formatDetailedList(transactions, date);
-  bot.sendMessage(chatId, reply, { parse_mode: 'HTML' });
+  sendLong(chatId, reply, { parse_mode: 'HTML' });
 });
 
 // /clear — clear today's data (admin only)
@@ -98,20 +115,20 @@ bot.onText(/\/clear(@\w+)?$/, async (msg) => {
     const admins = await bot.getChatAdministrators(chatId);
     const isAdmin = admins.some(a => a.user.id === userId);
     if (!isAdmin) {
-      return bot.sendMessage(chatId, '⛔ Only group admins can clear data.');
+      return sendLong(chatId, '⛔ Only group admins can clear data.');
     }
     const today = getTodayKey();
     store.clearTransactions(chatId, today);
-    bot.sendMessage(chatId, `🗑️ Today's transactions cleared.`);
+    sendLong(chatId, `🗑️ Today's transactions cleared.`);
   } catch (e) {
-    bot.sendMessage(chatId, '⚠️ Could not verify admin status.');
+    sendLong(chatId, '⚠️ Could not verify admin status.');
   }
 });
 
 // /help
 bot.onText(/\/help(@\w+)?$/, (msg) => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `
+  sendLong(chatId, `
 <b>📊 ABA Payway Summary Bot</b>
 
 <b>Commands:</b>
@@ -139,7 +156,7 @@ cron.schedule(cronExpr, () => {
     const transactions = store.getTransactions(chatId, today);
     if (transactions.length === 0) return;
     const report = formatSummary(transactions, '📅 Daily Report', today);
-    bot.sendMessage(chatId, report, { parse_mode: 'HTML' }).catch(console.error);
+    sendLong(chatId, report, { parse_mode: 'HTML' }).catch(console.error);
   });
   console.log(`📤 Sent daily reports to ${allChats.length} group(s)`);
 }, { timezone: TIMEZONE });
