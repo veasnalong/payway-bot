@@ -7,8 +7,14 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
+const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
 let data = {};
+
+// Always derive date key in the correct timezone
+function getDateKey(isoTimestamp) {
+  return new Date(isoTimestamp).toLocaleDateString('en-CA', { timeZone: TIMEZONE });
+}
 
 // Load existing data on startup
 function load() {
@@ -33,7 +39,7 @@ function save() {
 
 function addTransaction(chatId, transaction) {
   const key = String(chatId);
-  const dateKey = transaction.timestamp.slice(0, 10); // YYYY-MM-DD
+  const dateKey = getDateKey(transaction.timestamp); // timezone-aware, matches getTodayKey()
 
   if (!data[key]) data[key] = {};
   if (!data[key][dateKey]) data[key][dateKey] = [];
