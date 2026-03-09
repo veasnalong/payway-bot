@@ -36,27 +36,29 @@ async function sendLong(chatId, text, options = {}) {
 console.log('🤖 ABA Payway Summary Bot is running...');
 
 // ─── Listen to all messages in groups ─────────────────────────────────────────
-bot.on('message', (msg) => {
+function handleMsg(msg) {
   const chatId = msg.chat.id;
   const chatType = msg.chat.type;
 
-  // Only process group/supergroup messages
-  if (chatType !== 'group' && chatType !== 'supergroup') return;
-
-  // Optional: restrict to a specific group
+  if (!['group', 'supergroup', 'channel'].includes(chatType)) return;
   if (ALLOWED_GROUP_ID && chatId !== ALLOWED_GROUP_ID) return;
 
   const text = msg.text || msg.caption || '';
-  const fromBot = msg.from?.is_bot;
 
-  // Try to parse ABA Payway message (from bot or forwarded)
+  // Debug log — remove after confirming ABA messages are captured
+  if (text) console.log(`📨 [${chatType}] ${msg.from?.username || msg.from?.id || 'channel'}: ${text.slice(0, 80)}`);
+
   const transaction = parseABAMessage(text, msg);
-
   if (transaction) {
     store.addTransaction(chatId, transaction);
-    console.log(`✅ Captured transaction: ${transaction.amount} ${transaction.currency} from ${transaction.payer}`);
+    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency}`);
   }
-});
+}
+
+bot.on('message', handleMsg);
+bot.on('channel_post', handleMsg);
+bot.on('edited_message', handleMsg);
+bot.on('edited_channel_post', handleMsg);
 
 // ─── Commands ──────────────────────────────────────────────────────────────────
 

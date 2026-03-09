@@ -1,74 +1,89 @@
 /**
- * store.js — Simple persistent store using a JSON file.
- * Structure: { chatId: { "YYYY-MM-DD": [ ...transactions ] } }
+ * store.js — Supabase-backed persistent store
+ * Table: aba_transactions
  */
 
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
-const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
-let data = {};
+const TABLE = 'aba_transactions';
 
-// Always derive date key in the correct timezone
 function getDateKey(isoTimestamp) {
   return new Date(isoTimestamp).toLocaleDateString('en-CA', { timeZone: TIMEZONE });
 }
 
-// Load existing data on startup
-function load() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-      console.log(`📂 Loaded data from ${DATA_FILE}`);
-    }
-  } catch (e) {
-    console.error('⚠️ Could not load data file, starting fresh.', e.message);
-    data = {};
-  }
+async function addTransaction(chatId, transaction) {
+  const dateKey = getDateKey(transaction.timestamp);
+
+  // Check duplicate by message_id + chat_id
+  const { data: existing } = await supabase
+    .from(TABLE)
+    .select('id')
+    .eq('chat_id', String(chatId))
+    .eq('message_id', transaction.messageId)
+    .maybeSingle();
+
+  if (existing) return; // already recorded
+
+  const { error } = await supabase.from(TABLE).insert({
+    chat_id:     String(chatId),
+    message_id:  transaction.messageId,
+    date_key:    dateKey,
+    amount:      transaction.amount,
+    currency:    transaction.currency,
+    payer:       transaction.payer,
+    card_mask:   transaction.cardMask,
+    merchant:    transaction.merchant,
+    pay_method:  transaction.payMethod,
+    trx_id:      transaction.trxId,
+    apv:         transaction.apv,
+    date_time_str: transaction.dateTimeStr,
+    timestamp:   transaction.timestamp,
+    time_str:    transaction.timeStr,
+  });
+
+  if (error) console.error('❌ Supabase insert error:', error.message);
+  else console.log(`✅ Saved: ${transaction.payer} ${transaction.amount} ${transaction.currency}`);
 }
 
-function save() {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.error('⚠️ Could not save data:', e.message);
-  }
+async function getTransactions(chatId, dateKey) {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('chat_id', String(chatId))
+    .eq('date_key', dateKey)
+    .order('timestamp', { ascending: true });
+
+  if (error) { console.error('❌ Supabase fetch error:', error.message); return []; }
+
+  return (data || []).map(row => ({
+    amount:      row.amount,
+    currency:    row.currency,
+    payer:       row.payer,
+    cardMask:    row.card_mask,
+    merchant:    row.merchant,
+    payMethod:   row.pay_method,
+    trxId:       row.trx_id,
+    apv:         row.apv,
+    dateTimeStr: row.date_time_str,
+    timestamp:   row.timestamp,
+    timeStr:     row.time_str,
+    messageId:   row.message_id,
+  }));
 }
 
-function addTransaction(chatId, transaction) {
-  const key = String(chatId);
-  const dateKey = getDateKey(transaction.timestamp); // timezone-aware, matches getTodayKey()
+async function getAllChatIds() {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('chat_id');
 
-  if (!data[key]) data[key] = {};
-  if (!data[key][dateKey]) data[key][dateKey] = [];
-
-  // Deduplicate by messageId
-  const exists = data[key][dateKey].some(t => t.messageId === transaction.messageId);
-  if (!exists) {
-    data[key][dateKey].push(transaction);
-    save();
-  }
+  if (error) return [];
+  return [...new Set((data || []).map(r => Number(r.chat_id)))];
 }
 
-function getTransactions(chatId, dateKey) {
-  const key = String(chatId);
-  return (data[key] && data[key][dateKey]) ? [...data[key][dateKey]] : [];
-}
-
-function clearTransactions(chatId, dateKey) {
-  const key = String(chatId);
-  if (data[key]) {
-    data[key][dateKey] = [];
-    save();
-  }
-}
-
-function getAllChatIds() {
-  return Object.keys(data).map(Number);
-}
-
-load();
-
-module.exports = { addTransaction, getTransactions, clearTransactions, getAllChatIds };
+module.exports = { addTransaction, getTransactions, getAllChatIds };

@@ -1,30 +1,15 @@
 /**
  * parser.js — Parse ABA Payway Telegram bot messages
  *
- * Exact ABA Payway format:
+ * Format:
  * ៛6,000 paid by MEAS PANHA (*534) on Mar 09, 12:44 PM via ABA PAY at Mini Cafe HLA57. Trx. ID: 177303507915729, APV: 663671
- *
- * Fields:
- *   Amount      — ៛6,000  or  $25.50
- *   Payer       — MEAS PANHA
- *   Card last 4 — *534
- *   Date/time   — Mar 09, 12:44 PM
- *   Merchant    — Mini Cafe HLA57
- *   Trx. ID     — 177303507915729
- *   APV         — 663671
  */
 
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
-/**
- * Try to parse an ABA Payway message.
- * Returns a transaction object or null if not an ABA message.
- */
 function parseABAMessage(text, msg) {
   if (!text) return null;
 
-  // ── Master regex for the exact ABA Payway format ────────────────────────────
-  // ៛6,000 paid by MEAS PANHA (*534) on Mar 09, 12:44 PM via ABA PAY at Mini Cafe HLA57. Trx. ID: 177303507915729, APV: 663671
   const masterPattern = /^([៛$])\s*([\d,]+(?:\.\d+)?)\s+paid by\s+(.+?)\s+\((\*\d+)\)\s+on\s+(.+?)\s+via\s+(ABA KHQR(?:\s*\([^)]+\))?|ABA PAY|ABA)\s+at\s+(.+?)\.\s+Trx\.\s*ID:\s*(\d+),\s*APV:\s*(\d+)/i;
 
   const m = text.match(masterPattern);
@@ -34,10 +19,8 @@ function parseABAMessage(text, msg) {
 
   const currency = currencySymbol === '៛' ? 'KHR' : 'USD';
   const amount = parseFloat(amountRaw.replace(/,/g, ''));
-
   if (!amount || isNaN(amount)) return null;
 
-  // ── Parse date/time string e.g. "Mar 09, 12:44 PM" ─────────────────────────
   const year = new Date().getFullYear();
   const parsedDate = new Date(`${dateTimeStr} ${year}`);
   const timestamp = isNaN(parsedDate)
@@ -48,30 +31,57 @@ function parseABAMessage(text, msg) {
     .toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE });
 
   return {
-    amount,
-    currency,
+    amount, currency,
     payer: payerName.trim(),
-    cardMask,
-    merchant: merchant.trim(),
-    payMethod,
-    trxId,
-    apv,
+    cardMask, merchant: merchant.trim(),
+    payMethod, trxId, apv,
     dateTimeStr: dateTimeStr.trim(),
-    timestamp,
-    timeStr,
+    timestamp, timeStr,
     messageId: msg.message_id,
   };
 }
 
-/**
- * Format a summary report for a list of transactions.
- */
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function fmtAmount(amount, currency) {
+  const symbol = currency === 'KHR' ? '៛' : '$';
+  const num = currency === 'KHR'
+    ? amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    : amount.toFixed(2);
+  return `${symbol}${num}`;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function divider(char = '─', len = 28) {
+  return char.repeat(len);
+}
+
+// ── Summary ────────────────────────────────────────────────────────────────────
+
 function formatSummary(transactions, label, period) {
+  const now = new Date().toLocaleString('en-US', {
+    timeZone: TIMEZONE, month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: true
+  });
+
   if (transactions.length === 0) {
-    return `📊 <b>${label}</b>${period ? `\n📅 ${period}` : ''}\n\n<i>No transactions recorded yet.</i>`;
+    return [
+      `╔═══════════════════════════╗`,
+      `║   📊  ${label.padEnd(21)}║`,
+      `╚═══════════════════════════╝`,
+      ``,
+      `  <i>No transactions yet.</i>`,
+      `  <i>🕐 As of ${now}</i>`,
+    ].join('\n');
   }
 
-  // Group by currency
+  // Totals by currency
   const byCurrency = {};
   transactions.forEach(t => {
     if (!byCurrency[t.currency]) byCurrency[t.currency] = { total: 0, count: 0 };
@@ -79,21 +89,17 @@ function formatSummary(transactions, label, period) {
     byCurrency[t.currency].count++;
   });
 
-  // Unique payers
-  const uniquePayers = [...new Set(transactions.map(t => t.payer))];
-
-  // Breakdown by payer (top payers by total amount)
+  // By payer
   const byPayer = {};
   transactions.forEach(t => {
     if (!byPayer[t.payer]) byPayer[t.payer] = { total: 0, count: 0, currency: t.currency };
     byPayer[t.payer].total += t.amount;
     byPayer[t.payer].count++;
   });
-  const topPayers = Object.entries(byPayer)
-    .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 10);
+  const topPayers = Object.entries(byPayer).sort((a, b) => b[1].total - a[1].total);
+  const uniquePayers = topPayers.length;
 
-  // Breakdown by merchant
+  // By merchant
   const byMerchant = {};
   transactions.forEach(t => {
     if (!t.merchant) return;
@@ -102,105 +108,96 @@ function formatSummary(transactions, label, period) {
     byMerchant[t.merchant].count++;
   });
 
-  let lines = [];
-  lines.push(`📊 <b>${label}</b>`);
-  if (period) lines.push(`📅 <code>${period}</code>`);
-  lines.push('');
-  lines.push(`🧾 <b>Total Transactions:</b> ${transactions.length}`);
-  lines.push(`👥 <b>Unique Payers:</b> ${uniquePayers.length}`);
-  lines.push('');
+  const lines = [];
 
-  // Totals per currency
-  lines.push('💰 <b>Amount Received:</b>');
-  for (const [cur, data] of Object.entries(byCurrency)) {
-    const symbol = cur === 'KHR' ? '៛' : '$';
-    const formatted = cur === 'KHR'
-      ? data.total.toLocaleString('en-US', { maximumFractionDigits: 0 })
-      : data.total.toFixed(2);
-    lines.push(`  ${symbol}${formatted} <i>(${data.count} payment${data.count > 1 ? 's' : ''})</i>`);
+  // Header
+  lines.push(`<b>╔══════════════════════════╗</b>`);
+  lines.push(`<b>║  💳  PAYMENT SUMMARY      ║</b>`);
+  lines.push(`<b>╚══════════════════════════╝</b>`);
+  lines.push(``);
+
+  if (period) lines.push(`<b>📅  ${escapeHtml(label)}</b>  <code>${period}</code>`);
+  else        lines.push(`<b>📅  ${escapeHtml(label)}</b>`);
+  lines.push(`<i>🕐 Updated: ${now}</i>`);
+  lines.push(``);
+
+  // Stats bar
+  lines.push(`${divider('─', 28)}`);
+  lines.push(`  🧾 Transactions  <b>${transactions.length}</b>`);
+  lines.push(`  👥 Unique Payers  <b>${uniquePayers}</b>`);
+  lines.push(`${divider('─', 28)}`);
+  lines.push(``);
+
+  // Totals
+  lines.push(`<b>💰 TOTAL RECEIVED</b>`);
+  for (const [cur, d] of Object.entries(byCurrency)) {
+    lines.push(`  <b>${fmtAmount(d.total, cur)}</b>  <i>(${d.count} payment${d.count > 1 ? 's' : ''})</i>`);
   }
+  lines.push(``);
 
   // Top payers
-  lines.push('');
-  lines.push(`👤 <b>Payers:</b>`);
-  topPayers.forEach(([name, data]) => {
-    const symbol = data.currency === 'KHR' ? '៛' : '$';
-    const amt = data.currency === 'KHR'
-      ? data.total.toLocaleString('en-US', { maximumFractionDigits: 0 })
-      : data.total.toFixed(2);
-    lines.push(`  • ${escapeHtml(name)} — ${symbol}${amt} (×${data.count})`);
+  lines.push(`<b>👤 PAYERS</b>`);
+  topPayers.slice(0, 10).forEach(([name, d], i) => {
+    const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const times = d.count > 1 ? ` ×${d.count}` : '';
+    lines.push(`  ${rank} ${escapeHtml(name)}${times}`);
+    lines.push(`      └ <b>${fmtAmount(d.total, d.currency)}</b>`);
   });
-  if (uniquePayers.length > 10) lines.push(`  <i>...and ${uniquePayers.length - 10} more</i>`);
+  if (uniquePayers > 10) lines.push(`  <i>+ ${uniquePayers - 10} more payers</i>`);
+  lines.push(``);
 
   // Merchant breakdown
-  if (Object.keys(byMerchant).length > 0) {
-    lines.push('');
-    lines.push(`🏪 <b>By Merchant:</b>`);
-    Object.entries(byMerchant)
-      .sort((a, b) => b[1].total - a[1].total)
-      .forEach(([merchant, data]) => {
-        const symbol = data.currency === 'KHR' ? '៛' : '$';
-        const amt = data.currency === 'KHR'
-          ? data.total.toLocaleString('en-US', { maximumFractionDigits: 0 })
-          : data.total.toFixed(2);
-        lines.push(`  • ${escapeHtml(merchant)} — ${symbol}${amt} (×${data.count})`);
-      });
+  const merchants = Object.entries(byMerchant).sort((a, b) => b[1].total - a[1].total);
+  if (merchants.length > 0) {
+    lines.push(`<b>🏪 BY MERCHANT</b>`);
+    merchants.forEach(([name, d]) => {
+      lines.push(`  • <b>${escapeHtml(name)}</b>`);
+      lines.push(`    ${fmtAmount(d.total, d.currency)}  ·  ${d.count} txn${d.count > 1 ? 's' : ''}`);
+    });
+    lines.push(``);
   }
 
-  lines.push('');
-  lines.push(`<i>Use /list for full transaction details.</i>`);
+  lines.push(`${divider('─', 28)}`);
+  lines.push(`<i>📋 /list — view all transactions</i>`);
 
   return lines.join('\n');
 }
 
-/**
- * Format a detailed transaction list.
- */
+// ── Detail List ────────────────────────────────────────────────────────────────
+
 function formatDetailedList(transactions, label) {
   if (transactions.length === 0) {
-    return `📋 <b>Transactions — ${label}</b>\n\n<i>No transactions recorded.</i>`;
+    return `<b>📋 TRANSACTIONS — ${escapeHtml(label).toUpperCase()}</b>\n\n<i>No transactions recorded.</i>`;
   }
-
-  let lines = [];
-  lines.push(`📋 <b>Transactions — ${label}</b>`);
-  lines.push(`<i>${transactions.length} record(s)</i>`);
-  lines.push('─────────────────────');
-
-  transactions.forEach((t, i) => {
-    const symbol = t.currency === 'KHR' ? '៛' : '$';
-    const amt = t.currency === 'KHR'
-      ? t.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
-      : t.amount.toFixed(2);
-
-    lines.push(`<b>${i + 1}.</b> ${symbol}${amt} — <b>${escapeHtml(t.payer)}</b> ${escapeHtml(t.cardMask || '')}`);
-    if (t.merchant) lines.push(`   🏪 ${escapeHtml(t.merchant)}`);
-    lines.push(`   🕐 ${t.dateTimeStr}`);
-    if (t.trxId) lines.push(`   🔖 Trx: <code>${t.trxId}</code>  APV: <code>${t.apv}</code>`);
-  });
-
-  lines.push('─────────────────────');
 
   // Totals
   const byCurrency = {};
   transactions.forEach(t => {
     byCurrency[t.currency] = (byCurrency[t.currency] || 0) + t.amount;
   });
+
+  const lines = [];
+  lines.push(`<b>📋 TRANSACTIONS</b>  <code>${escapeHtml(label)}</code>`);
+  lines.push(`<i>${transactions.length} record${transactions.length > 1 ? 's' : ''}</i>`);
+  lines.push(``);
+
+  transactions.forEach((t, i) => {
+    const num = String(i + 1).padStart(2, '0');
+    lines.push(`<b>${num}│</b> <b>${fmtAmount(t.amount, t.currency)}</b>`);
+    lines.push(`   <b>${escapeHtml(t.payer)}</b> <code>${escapeHtml(t.cardMask || '')}</code>`);
+    if (t.merchant) lines.push(`   🏪 ${escapeHtml(t.merchant)}`);
+    lines.push(`   🕐 ${t.dateTimeStr}  ·  ${escapeHtml(t.payMethod || '')}`);
+    lines.push(`   🔖 <code>${t.trxId}</code>`);
+    if (i < transactions.length - 1) lines.push(`   ${divider('╌', 24)}`);
+  });
+
+  lines.push(``);
+  lines.push(`${divider('─', 28)}`);
   for (const [cur, total] of Object.entries(byCurrency)) {
-    const symbol = cur === 'KHR' ? '៛' : '$';
-    const formatted = cur === 'KHR'
-      ? total.toLocaleString('en-US', { maximumFractionDigits: 0 })
-      : total.toFixed(2);
-    lines.push(`💰 <b>Total:</b> ${symbol}${formatted}`);
+    lines.push(`💰 <b>TOTAL: ${fmtAmount(total, cur)}</b>`);
   }
 
   return lines.join('\n');
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 module.exports = { parseABAMessage, formatSummary, formatDetailedList };
