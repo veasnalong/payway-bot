@@ -25,7 +25,7 @@ function parseABAMessage(text, msg) {
 
   // ── Master regex for the exact ABA Payway format ────────────────────────────
   // ៛6,000 paid by MEAS PANHA (*534) on Mar 09, 12:44 PM via ABA PAY at Mini Cafe HLA57. Trx. ID: 177303507915729, APV: 663671
-  const masterPattern = /^([៛$])\s*([\d,]+(?:\.\d+)?)\s+paid by\s+(.+?)\s+\((\*\d+)\)\s+on\s+(.+?)\s+via\s+(ABA PAY|ABA)\s+at\s+(.+?)\.\s+Trx\.\s*ID:\s*(\d+),\s*APV:\s*(\d+)/i;
+  const masterPattern = /^([៛$])\s*([\d,]+(?:\.\d+)?)\s+paid by\s+(.+?)\s+\((\*\d+)\)\s+on\s+(.+?)\s+via\s+(ABA KHQR(?:\s*\([^)]+\))?|ABA PAY|ABA)\s+at\s+(.+?)\.\s+Trx\.\s*ID:\s*(\d+),\s*APV:\s*(\d+)/i;
 
   const m = text.match(masterPattern);
   if (!m) return null;
