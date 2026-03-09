@@ -14,7 +14,15 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// Clear any existing webhook before starting polling
+const bot = new TelegramBot(TOKEN, { polling: false });
+bot.deleteWebHook().then(() => {
+  console.log('🔓 Webhook cleared, starting polling...');
+  bot.startPolling();
+}).catch(err => {
+  console.error('⚠️ Could not clear webhook:', err.message);
+  bot.startPolling();
+});
 
 // Helper: split long messages into chunks under Telegram's 4096 char limit
 async function sendLong(chatId, text, options = {}) {
@@ -34,6 +42,7 @@ async function sendLong(chatId, text, options = {}) {
 }
 
 console.log('🤖 ABA Payway Summary Bot is running...');
+
 
 // ─── Listen to all messages in groups ─────────────────────────────────────────
 function handleMsg(msg) {
