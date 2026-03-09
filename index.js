@@ -25,6 +25,11 @@ const bot = new TelegramBot(TOKEN, { polling: false });
 bot.deleteWebHook().then(() => {
   console.log('🔓 Webhook cleared, starting polling...');
   bot.startPolling();
+
+// Suppress empty polling errors (known node-telegram-bot-api library bug)
+bot.on('polling_error', (err) => {
+  if (err && err.message) console.error('❌ polling error:', err.message);
+});
 }).catch(err => {
   console.error('⚠️ Could not clear webhook:', err.message);
   bot.startPolling();
@@ -78,49 +83,76 @@ bot.on('edited_channel_post', handleMsg);
 // ─── Commands ──────────────────────────────────────────────────────────────────
 
 // /summary — today's summary
-bot.onText(/\/summary(@\w+)?$/, (msg) => {
+bot.onText(/\/summary(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
-  const today = getTodayKey();
-  const transactions = store.getTransactions(chatId, today);
-  const reply = formatSummary(transactions, 'Today', today);
-  sendLong(chatId, reply, { parse_mode: 'HTML' });
+  try {
+    const today = getTodayKey();
+    const transactions = await store.getTransactions(chatId, today);
+    const reply = formatSummary(transactions, 'Today', today);
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /summary error:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
 });
 
 // /summary_week — this week
-bot.onText(/\/summary_week(@\w+)?$/, (msg) => {
+bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
-  const days = getLastNDays(7);
-  const transactions = days.flatMap(d => store.getTransactions(chatId, d));
-  const reply = formatSummary(transactions, 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]);
-  sendLong(chatId, reply, { parse_mode: 'HTML' });
+  try {
+    const days = getLastNDays(7);
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    const transactions = all.flat();
+    const reply = formatSummary(transactions, 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]);
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /summary_week error:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
 });
 
 // /summary_month — this month
-bot.onText(/\/summary_month(@\w+)?$/, (msg) => {
+bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
-  const days = getThisMonthDays();
-  const transactions = days.flatMap(d => store.getTransactions(chatId, d));
-  const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
-  const reply = formatSummary(transactions, label, '');
-  sendLong(chatId, reply, { parse_mode: 'HTML' });
+  try {
+    const days = getThisMonthDays();
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    const transactions = all.flat();
+    const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
+    const reply = formatSummary(transactions, label, '');
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /summary_month error:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
 });
 
 // /list — detailed list of today's transactions
-bot.onText(/\/list(@\w+)?$/, (msg) => {
+bot.onText(/\/list(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
-  const today = getTodayKey();
-  const transactions = store.getTransactions(chatId, today);
-  const reply = formatDetailedList(transactions, 'Today');
-  sendLong(chatId, reply, { parse_mode: 'HTML' });
+  try {
+    const today = getTodayKey();
+    const transactions = await store.getTransactions(chatId, today);
+    const reply = formatDetailedList(transactions, 'Today');
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /list error:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
 });
 
 // /list YYYY-MM-DD — list for a specific date
-bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, (msg, match) => {
+bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const date = match[2];
-  const transactions = store.getTransactions(chatId, date);
-  const reply = formatDetailedList(transactions, date);
-  sendLong(chatId, reply, { parse_mode: 'HTML' });
+  try {
+    const date = match[2];
+    const transactions = await store.getTransactions(chatId, date);
+    const reply = formatDetailedList(transactions, date);
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /list date error:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
 });
 
 // /clear — clear today's data (admin only)
