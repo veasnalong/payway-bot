@@ -9,10 +9,16 @@ const ALLOWED_GROUP_ID = process.env.GROUP_ID ? Number(process.env.GROUP_ID) : n
 const DAILY_REPORT_TIME = process.env.DAILY_REPORT_TIME || '18:00'; // 24h format HH:MM
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
-if (!TOKEN) {
-  console.error('❌ BOT_TOKEN is not set in .env');
+// Validate all required env vars upfront
+const missing = [];
+if (!TOKEN) missing.push('BOT_TOKEN');
+if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
+if (!process.env.SUPABASE_KEY) missing.push('SUPABASE_KEY');
+if (missing.length > 0) {
+  console.error('❌ Missing required environment variables:', missing.join(', '));
   process.exit(1);
 }
+console.log('✅ Environment variables OK');
 
 // Clear any existing webhook before starting polling
 const bot = new TelegramBot(TOKEN, { polling: false });
