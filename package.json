@@ -1,7 +1,7 @@
 {
   "name": "aba-summary-bot",
   "version": "1.0.0",
-  "description": "ABA Payway Telegram Summary Bot",
+  "description": "Mini Coffee - ABA Payway + Daily Cash Report Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
