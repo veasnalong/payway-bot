@@ -4,12 +4,15 @@
   "description": "Mini Coffee - ABA Payway + Daily Cash Report Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "session": "node generate_session.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "dotenv": "^16.0.0",
+    "input": "^1.0.1",
     "node-cron": "^3.0.0",
-    "node-telegram-bot-api": "^0.67.0"
+    "node-telegram-bot-api": "^0.67.0",
+    "telegram": "^2.19.8"
   }
 }

@@ -3,220 +3,69 @@ const TelegramBot = require('node-telegram-bot-api');
 const cron = require('node-cron');
 const { parseABAMessage, formatSummary, formatDetailedList } = require('./parser');
 const store = require('./store');
+const cashReport = require('./cash_report');
+const { startUserbot } = require('./userbot');
 
 const TOKEN = process.env.BOT_TOKEN;
 const ALLOWED_GROUP_ID = process.env.GROUP_ID ? Number(process.env.GROUP_ID) : null;
-const DAILY_REPORT_TIME = process.env.DAILY_REPORT_TIME || '18:00'; // 24h format HH:MM
+const SOURCE_GROUP_ID = process.env.SOURCE_GROUP_ID ? Number(process.env.SOURCE_GROUP_ID) : null; // ABA Payway group
+const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID ? Number(process.env.TARGET_GROUP_ID) : null; // Your bot group
+const DAILY_REPORT_TIME = process.env.DAILY_REPORT_TIME || '18:00';
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
-// Validate all required env vars upfront
+// ── Validate env vars ──────────────────────────────────────────────────────────
 const missing = [];
 if (!TOKEN) missing.push('BOT_TOKEN');
 if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
 if (!process.env.SUPABASE_KEY) missing.push('SUPABASE_KEY');
+if (!process.env.ANTHROPIC_API_KEY) missing.push('ANTHROPIC_API_KEY');
 if (missing.length > 0) {
-  console.error('❌ Missing required environment variables:', missing.join(', '));
+  console.error('❌ Missing env vars:', missing.join(', '));
   process.exit(1);
 }
-console.log('✅ Environment variables OK');
+console.log('✅ Environment OK');
 
-// Clear any existing webhook before starting polling
+// ── Bot init ───────────────────────────────────────────────────────────────────
 const bot = new TelegramBot(TOKEN, { polling: false });
-bot.deleteWebHook().then(() => {
-  console.log('🔓 Webhook cleared, starting polling...');
-  bot.startPolling();
+bot.deleteWebHook()
+  .then(() => {
+    console.log('🔓 Webhook cleared, starting polling...');
+    bot.startPolling();
+    bot.on('polling_error', (err) => {
+      if (err && err.message) console.error('❌ polling error:', err.message);
+    });
+    bot.getMe().then(me => console.log(`🤖 Bot: @${me.username} (id: ${me.id})`));
+    startUserbot().catch(e => console.error('❌ Userbot failed to start:', e.message));
+  })
+  .catch(err => {
+    console.error('⚠️ Could not clear webhook:', err.message);
+    bot.startPolling();
+  });
 
-// Suppress empty polling errors (known node-telegram-bot-api library bug)
-bot.on('polling_error', (err) => {
-  if (err && err.message) console.error('❌ polling error:', err.message);
-});
-}).catch(err => {
-  console.error('⚠️ Could not clear webhook:', err.message);
-  bot.startPolling();
-});
+console.log('🤖 Mini Coffee Bot is running...');
+console.log(`⏰ Daily report at ${DAILY_REPORT_TIME} (${TIMEZONE})`);
 
-// Helper: split long messages into chunks under Telegram's 4096 char limit
+// ── Helper: send long message in chunks ───────────────────────────────────────
 async function sendLong(chatId, text, options = {}) {
   const LIMIT = 4000;
   if (text.length <= LIMIT) return bot.sendMessage(chatId, text, options);
-  const lines = text.split("\n");
-  let chunk = "";
+  const lines = text.split('\n');
+  let chunk = '';
   for (const line of lines) {
-    if ((chunk + "\n" + line).length > LIMIT) {
+    if ((chunk + '\n' + line).length > LIMIT) {
       await bot.sendMessage(chatId, chunk, options);
       chunk = line;
     } else {
-      chunk = chunk ? chunk + "\n" + line : line;
+      chunk = chunk ? chunk + '\n' + line : line;
     }
   }
   if (chunk) await bot.sendMessage(chatId, chunk, options);
 }
 
-console.log('🤖 ABA Payway Summary Bot is running...');
-
-
-// ─── Listen to all messages in groups ─────────────────────────────────────────
-function handleMsg(msg) {
-  const chatId = msg.chat.id;
-  const chatType = msg.chat.type;
-
-  if (!['group', 'supergroup', 'channel'].includes(chatType)) return;
-  if (ALLOWED_GROUP_ID && chatId !== ALLOWED_GROUP_ID) return;
-
-  const text = msg.text || msg.caption || '';
-
-  // Debug log — remove after confirming ABA messages are captured
-  if (text) console.log(`📨 [${chatType}] ${msg.from?.username || msg.from?.id || 'channel'}: ${text.slice(0, 80)}`);
-
-  const transaction = parseABAMessage(text, msg);
-  if (transaction) {
-    store.addTransaction(chatId, transaction);
-    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency}`);
-  }
-}
-
-bot.on('message', handleMsg);
-bot.on('channel_post', handleMsg);
-bot.on('edited_message', handleMsg);
-bot.on('edited_channel_post', handleMsg);
-
-// ─── Commands ──────────────────────────────────────────────────────────────────
-
-// /summary — today's summary
-bot.onText(/\/summary(@\w+)?$/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const today = getTodayKey();
-    const transactions = await store.getTransactions(chatId, today);
-    const reply = formatSummary(transactions, 'Today', today);
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-  } catch (e) {
-    console.error('❌ /summary error:', e.message);
-    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
-  }
-});
-
-// /summary_week — this week
-bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const days = getLastNDays(7);
-    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
-    const transactions = all.flat();
-    const reply = formatSummary(transactions, 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]);
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-  } catch (e) {
-    console.error('❌ /summary_week error:', e.message);
-    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
-  }
-});
-
-// /summary_month — this month
-bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const days = getThisMonthDays();
-    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
-    const transactions = all.flat();
-    const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
-    const reply = formatSummary(transactions, label, '');
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-  } catch (e) {
-    console.error('❌ /summary_month error:', e.message);
-    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
-  }
-});
-
-// /list — detailed list of today's transactions
-bot.onText(/\/list(@\w+)?$/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const today = getTodayKey();
-    const transactions = await store.getTransactions(chatId, today);
-    const reply = formatDetailedList(transactions, 'Today');
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-  } catch (e) {
-    console.error('❌ /list error:', e.message);
-    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
-  }
-});
-
-// /list YYYY-MM-DD — list for a specific date
-bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  try {
-    const date = match[2];
-    const transactions = await store.getTransactions(chatId, date);
-    const reply = formatDetailedList(transactions, date);
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-  } catch (e) {
-    console.error('❌ /list date error:', e.message);
-    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
-  }
-});
-
-// /clear — clear today's data (admin only)
-bot.onText(/\/clear(@\w+)?$/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-
-  try {
-    const admins = await bot.getChatAdministrators(chatId);
-    const isAdmin = admins.some(a => a.user.id === userId);
-    if (!isAdmin) {
-      return sendLong(chatId, '⛔ Only group admins can clear data.');
-    }
-    const today = getTodayKey();
-    store.clearTransactions(chatId, today);
-    sendLong(chatId, `🗑️ Today's transactions cleared.`);
-  } catch (e) {
-    sendLong(chatId, '⚠️ Could not verify admin status.');
-  }
-});
-
-// /help
-bot.onText(/\/help(@\w+)?$/, (msg) => {
-  const chatId = msg.chat.id;
-  sendLong(chatId, `
-<b>📊 ABA Payway Summary Bot</b>
-
-<b>Commands:</b>
-/summary — Today's payment summary
-/summary_week — Last 7 days summary
-/summary_month — This month's summary
-/list — Today's transaction list
-/list YYYY-MM-DD — List for specific date
-/clear — Clear today's data (admin only)
-/help — Show this help
-
-<b>How it works:</b>
-The bot automatically reads ABA Payway payment notifications in this group and builds a running summary. Just run <code>/summary</code> anytime to see totals.
-  `, { parse_mode: 'HTML' });
-});
-
-// ─── Scheduled Daily Report ────────────────────────────────────────────────────
-const [schedHour, schedMin] = DAILY_REPORT_TIME.split(':');
-const cronExpr = `${schedMin} ${schedHour} * * *`;
-
-cron.schedule(cronExpr, () => {
-  const today = getTodayKey();
-  const allChats = store.getAllChatIds();
-  allChats.forEach(chatId => {
-    const transactions = store.getTransactions(chatId, today);
-    if (transactions.length === 0) return;
-    const report = formatSummary(transactions, '📅 Daily Report', today);
-    sendLong(chatId, report, { parse_mode: 'HTML' }).catch(console.error);
-  });
-  console.log(`📤 Sent daily reports to ${allChats.length} group(s)`);
-}, { timezone: TIMEZONE });
-
-console.log(`⏰ Daily report scheduled at ${DAILY_REPORT_TIME} (${TIMEZONE})`);
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ── Date helpers ───────────────────────────────────────────────────────────────
 function getTodayKey() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: TIMEZONE }); // YYYY-MM-DD
+  return new Date().toLocaleDateString('en-CA', { timeZone: TIMEZONE });
 }
-
 function getLastNDays(n) {
   const days = [];
   for (let i = n - 1; i >= 0; i--) {
@@ -226,15 +75,218 @@ function getLastNDays(n) {
   }
   return days;
 }
-
 function getThisMonthDays() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
   const days = [];
   for (let d = 1; d <= now.getDate(); d++) {
-    const date = new Date(year, month, d);
+    const date = new Date(now.getFullYear(), now.getMonth(), d);
     days.push(date.toLocaleDateString('en-CA', { timeZone: TIMEZONE }));
   }
   return days;
 }
+
+// ── ABA Payway message listener ────────────────────────────────────────────────
+function handleMsg(msg) {
+  const chatId = msg.chat.id;
+  const chatType = msg.chat.type;
+
+  // Log ALL incoming messages regardless of group — helps diagnose which chat_id to use
+  const text = msg.text || msg.caption || '';
+  const fromName = msg.sender_chat?.title || msg.sender_chat?.username
+    || msg.from?.username || msg.from?.first_name || String(msg.from?.id || 'unknown');
+  const tag = (msg.from?.is_bot ? '[BOT]' : '') + (msg.sender_chat ? '[CHAN]' : '');
+  console.log(`📨 chat=${chatId} [${chatType}]${tag} ${fromName}: ${(text || '[no text]').slice(0, 100)}`);
+
+  if (!['group', 'supergroup', 'channel'].includes(chatType)) return;
+  // NOTE: GROUP_ID filter disabled — bot captures from ALL groups it's in
+  // Set GROUP_ID in env to restrict to one group once confirmed working
+
+  if (!text) return;
+
+  const transaction = parseABAMessage(text, msg);
+  if (transaction) {
+    store.addTransaction(chatId, transaction);
+    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} in chat=${chatId}`);
+  } else if (text.includes('paid by') || text.includes('ABA') || text.includes('KHR')) {
+    console.log(`⚠️  ABA-like but not parsed — chat=${chatId}: ${text.slice(0, 150)}`);
+  }
+}
+
+bot.on('message', handleMsg);
+bot.on('channel_post', handleMsg);
+bot.on('edited_message', handleMsg);
+bot.on('edited_channel_post', handleMsg);
+
+// ── Photo → Cash Report ────────────────────────────────────────────────────────
+bot.on('photo', async (msg) => {
+  const chatId = msg.chat.id;
+  const chatType = msg.chat.type;
+  if (!['group', 'supergroup'].includes(chatType)) return;
+
+  const caption = (msg.caption || '').toLowerCase();
+  // Process if caption has report keywords OR no caption at all
+  if (caption && !caption.includes('report') && !caption.includes('cash') && !caption.includes('daily')) return;
+
+  const processingMsg = await bot.sendMessage(chatId, '📸 Reading cash report sheet... please wait.');
+  try {
+    const photo = msg.photo[msg.photo.length - 1];
+    const base64 = await cashReport.downloadPhotoBase64(bot, photo.file_id);
+    console.log('📸 Photo downloaded, calling Claude Vision...');
+
+    const data = await cashReport.extractReportFromImage(base64);
+    console.log('✅ Extracted data:', JSON.stringify(data).slice(0, 200));
+
+    const result = await cashReport.saveReport(chatId, msg.message_id, data);
+    if (result.duplicate) {
+      await bot.editMessageText('⚠️ This report was already recorded.', { chat_id: chatId, message_id: processingMsg.message_id });
+      return;
+    }
+
+    const reports = await cashReport.getReports(chatId, result.dateKey);
+    const summary = cashReport.formatReportSummary(reports, data.cashier || 'Report', result.dateKey);
+    await bot.editMessageText('✅ Cash report saved!', { chat_id: chatId, message_id: processingMsg.message_id });
+    await sendLong(chatId, summary, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ Photo error:', e.message);
+    await bot.editMessageText('❌ Could not read report: ' + e.message, { chat_id: chatId, message_id: processingMsg.message_id }).catch(() => {});
+  }
+});
+
+
+// ── Auto-Forward: ABA group → Bot group ───────────────────────────────────────
+// Sits in SOURCE_GROUP_ID, detects ABA payments, forwards to TARGET_GROUP_ID
+async function handleAutoForward(msg) {
+  if (!SOURCE_GROUP_ID || !TARGET_GROUP_ID) return;
+  if (msg.chat.id !== SOURCE_GROUP_ID) return;
+
+  const text = msg.text || msg.caption || '';
+  if (!text) return;
+
+  // Only forward if it looks like an ABA payment
+  const isABAPayment = /paid by.+via ABA/i.test(text) || /.Trx. ID:/i.test(text);
+  if (!isABAPayment) return;
+
+  try {
+    await bot.forwardMessage(TARGET_GROUP_ID, SOURCE_GROUP_ID, msg.message_id);
+    console.log(`📤 Auto-forwarded ABA message to target group`);
+  } catch (e) {
+    console.error('❌ Auto-forward failed:', e.message);
+  }
+}
+
+bot.on('message', handleAutoForward);
+bot.on('channel_post', handleAutoForward);
+
+// ── ABA Commands ───────────────────────────────────────────────────────────────
+bot.onText(/\/summary(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const transactions = await store.getTransactions(chatId, getTodayKey());
+    await sendLong(chatId, formatSummary(transactions, 'Today', getTodayKey()), { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /summary:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const days = getLastNDays(7);
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    await sendLong(chatId, formatSummary(all.flat(), 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]), { parse_mode: 'HTML' });
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const days = getThisMonthDays();
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
+    await sendLong(chatId, formatSummary(all.flat(), label, ''), { parse_mode: 'HTML' });
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/list(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const transactions = await store.getTransactions(chatId, getTodayKey());
+    await sendLong(chatId, formatDetailedList(transactions, 'Today'), { parse_mode: 'HTML' });
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  try {
+    const transactions = await store.getTransactions(chatId, match[2]);
+    await sendLong(chatId, formatDetailedList(transactions, match[2]), { parse_mode: 'HTML' });
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+// ── Cash Report Commands ───────────────────────────────────────────────────────
+bot.onText(/\/report(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const today = getTodayKey();
+    const reports = await cashReport.getReports(chatId, today);
+    await sendLong(chatId, cashReport.formatReportSummary(reports, 'Today', today), { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('❌ /report:', e.message);
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/report(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  try {
+    const reports = await cashReport.getReports(chatId, match[2]);
+    await sendLong(chatId, cashReport.formatReportSummary(reports, match[2], match[2]), { parse_mode: 'HTML' });
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+// ── Help ───────────────────────────────────────────────────────────────────────
+bot.onText(/\/help(@\w+)?$/, (msg) => {
+  sendLong(msg.chat.id, `<b>🤖 Mini Coffee Bot</b>
+
+<b>💳 ABA Payway (auto-captured):</b>
+/summary — Today's payment summary
+/summary_week — Last 7 days
+/summary_month — This month
+/list — Today's transaction list
+/list YYYY-MM-DD — Specific date
+
+<b>📋 Daily Cash Report:</b>
+📸 Send a photo of the cash report sheet
+/report — Today's cash report
+/report YYYY-MM-DD — Specific date
+
+/help — Show this help`, { parse_mode: 'HTML' });
+});
+
+// ── Scheduled Daily ABA Summary ────────────────────────────────────────────────
+const [schedHour, schedMin] = DAILY_REPORT_TIME.split(':');
+cron.schedule(`${schedMin} ${schedHour} * * *`, async () => {
+  const today = getTodayKey();
+  const chatIds = await store.getAllChatIds();
+  for (const chatId of chatIds) {
+    try {
+      const transactions = await store.getTransactions(chatId, today);
+      if (transactions.length === 0) continue;
+      await sendLong(chatId, formatSummary(transactions, '📅 Daily Report', today), { parse_mode: 'HTML' });
+    } catch (e) {
+      console.error(`❌ Scheduled report for ${chatId}:`, e.message);
+    }
+  }
+  console.log(`📤 Daily reports sent to ${chatIds.length} group(s)`);
+}, { timezone: TIMEZONE });
