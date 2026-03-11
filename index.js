@@ -18,7 +18,7 @@ const missing = [];
 if (!TOKEN) missing.push('BOT_TOKEN');
 if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
 if (!process.env.SUPABASE_KEY) missing.push('SUPABASE_KEY');
-if (!process.env.ANTHROPIC_API_KEY) missing.push('ANTHROPIC_API_KEY');
+if (!process.env.ANTHROPIC_API_KEY) console.log('⚠️  ANTHROPIC_API_KEY not set — cash report photo feature disabled');
 if (missing.length > 0) {
   console.error('❌ Missing env vars:', missing.join(', '));
   process.exit(1);
@@ -127,6 +127,9 @@ bot.on('photo', async (msg) => {
   // Process if caption has report keywords OR no caption at all
   if (caption && !caption.includes('report') && !caption.includes('cash') && !caption.includes('daily')) return;
 
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return bot.sendMessage(chatId, '⚠️ Cash report photo feature is disabled. Set ANTHROPIC_API_KEY to enable it.');
+  }
   const processingMsg = await bot.sendMessage(chatId, '📸 Reading cash report sheet... please wait.');
   try {
     const photo = msg.photo[msg.photo.length - 1];
