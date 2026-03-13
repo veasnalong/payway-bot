@@ -258,6 +258,61 @@ bot.onText(/\/report(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
   }
 });
 
+// ── Clear Commands ─────────────────────────────────────────────────────────────
+bot.onText(/\/clear(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const admins = await bot.getChatAdministrators(chatId);
+    const isAdmin = admins.some(a => a.user.id === msg.from.id);
+    if (!isAdmin) return bot.sendMessage(chatId, '⛔ Only admins can clear data.');
+    const today = getTodayKey();
+    await store.clearTransactions(chatId, today);
+    bot.sendMessage(chatId, `🗑️ Today's ABA transactions cleared.`);
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/clear(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  try {
+    const admins = await bot.getChatAdministrators(chatId);
+    const isAdmin = admins.some(a => a.user.id === msg.from.id);
+    if (!isAdmin) return bot.sendMessage(chatId, '⛔ Only admins can clear data.');
+    await store.clearTransactions(chatId, match[2]);
+    bot.sendMessage(chatId, `🗑️ Transactions for ${match[2]} cleared.`);
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/clear_report(@\w+)?$/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const admins = await bot.getChatAdministrators(chatId);
+    const isAdmin = admins.some(a => a.user.id === msg.from.id);
+    if (!isAdmin) return bot.sendMessage(chatId, '⛔ Only admins can clear data.');
+    const today = getTodayKey();
+    await cashReport.clearReports(chatId, today);
+    bot.sendMessage(chatId, `🗑️ Today's cash reports cleared.`);
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
+bot.onText(/\/clear_report(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  try {
+    const admins = await bot.getChatAdministrators(chatId);
+    const isAdmin = admins.some(a => a.user.id === msg.from.id);
+    if (!isAdmin) return bot.sendMessage(chatId, '⛔ Only admins can clear data.');
+    await cashReport.clearReports(chatId, match[2]);
+    bot.sendMessage(chatId, `🗑️ Cash reports for ${match[2]} cleared.`);
+  } catch (e) {
+    bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
+  }
+});
+
 // ── Help ───────────────────────────────────────────────────────────────────────
 bot.onText(/\/help(@\w+)?$/, (msg) => {
   sendLong(msg.chat.id, `<b>🤖 Mini Coffee Bot</b>
@@ -273,6 +328,12 @@ bot.onText(/\/help(@\w+)?$/, (msg) => {
 📸 Send a photo of the cash report sheet
 /report — Today's cash report
 /report YYYY-MM-DD — Specific date
+
+<b>🗑️ Clear (admins only):</b>
+/clear — Clear today\'s ABA transactions
+/clear YYYY-MM-DD — Clear specific date
+/clear_report — Clear today\'s cash reports
+/clear_report YYYY-MM-DD — Clear specific date
 
 /help — Show this help`, { parse_mode: 'HTML' });
 });

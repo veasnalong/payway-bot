@@ -105,4 +105,20 @@ async function getAllChatIds() {
   }
 }
 
-module.exports = { addTransaction, getTransactions, getAllChatIds };
+async function clearTransactions(chatId, dateKey) {
+  try {
+    const db = getClient();
+    const { error } = await db
+      .from(TABLE)
+      .delete()
+      .eq('chat_id', String(chatId))
+      .eq('date_key', dateKey);
+    if (error) throw new Error(error.message);
+    console.log(`🗑️ Cleared transactions for chat=${chatId} date=${dateKey}`);
+  } catch (e) {
+    console.error('❌ clearTransactions error:', e.message);
+    throw e;
+  }
+}
+
+module.exports = { addTransaction, getTransactions, getAllChatIds, clearTransactions };

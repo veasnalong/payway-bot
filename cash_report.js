@@ -291,4 +291,20 @@ function formatReportSummary(reports, label, dateKey) {
   return lines.join('\n');
 }
 
-module.exports = { downloadPhotoBase64, extractReportFromImage, saveReport, getReports, formatReportSummary };
+async function clearReports(chatId, dateKey) {
+  try {
+    const db = getClient();
+    const { error } = await db
+      .from(TABLE)
+      .delete()
+      .eq('chat_id', String(chatId))
+      .eq('date_key', dateKey);
+    if (error) throw new Error(error.message);
+    console.log(`🗑️ Cleared cash reports for chat=${chatId} date=${dateKey}`);
+  } catch (e) {
+    console.error('❌ clearReports error:', e.message);
+    throw e;
+  }
+}
+
+module.exports = { downloadPhotoBase64, extractReportFromImage, saveReport, getReports, formatReportSummary, clearReports };
