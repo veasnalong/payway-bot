@@ -98,7 +98,7 @@ async function startUserbot() {
     } catch (e) {
       console.error('❌ Userbot forward error:', e.message);
     }
-  }, new NewMessage({ chats: [sourceEntity] }));
+  }, new NewMessage({ chats: [sourceEntity.id] }));
 
   console.log(`👂 Userbot listening for @${ABA_BOT} in: ${sourceEntity.title || SOURCE_ID}`);
 }
