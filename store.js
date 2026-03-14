@@ -29,16 +29,18 @@ async function addTransaction(chatId, transaction) {
     const db = getClient();
     const dateKey = getDateKey(transaction.timestamp);
 
-    const { data: existing } = await db
-      .from(TABLE)
-      .select('id')
-      .eq('chat_id', String(chatId))
-      .eq('message_id', transaction.messageId)
-      .eq('date_key', dateKey)
-      .maybeSingle();
+    // For CASH use trx_id for dedup, for ABA use message_id
+    const isCash = (transaction.payMethod || '').toUpperCase() === 'CASH';
+    let dupQuery = db.from(TABLE).select('id').eq('chat_id', String(chatId)).eq('date_key', dateKey);
+    if (isCash) {
+      dupQuery = dupQuery.eq('trx_id', transaction.trxId);
+    } else {
+      dupQuery = dupQuery.eq('message_id', transaction.messageId);
+    }
+    const { data: existing } = await dupQuery.maybeSingle();
 
     if (existing) {
-      console.log(`⚠️ Duplicate skipped: chat=${chatId} message_id=${transaction.messageId} date=${dateKey} payer=${transaction.payer}`);
+      console.log(`⚠️ Duplicate skipped: chat=${chatId} ${isCash ? 'trx_id=' + transaction.trxId : 'message_id=' + transaction.messageId} date=${dateKey} payer=${transaction.payer}`);
       return;
     }
 

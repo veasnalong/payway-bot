@@ -110,7 +110,7 @@ function parseCashMessage(text, msg) {
       amount, currency: 'USD',
       payer: msg.from?.first_name || msg.from?.username || 'Barista',
       cardMask: '', merchant: 'Mini Cafe HLA57',
-      payMethod: 'CASH', trxId: `CASH-${msg.message_id}`, apv: '',
+      payMethod: 'CASH', trxId: `CASH-${msg.message_id}-${Date.now()}`, apv: '',
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
@@ -127,7 +127,7 @@ function parseCashMessage(text, msg) {
       amount, currency: 'KHR',
       payer: msg.from?.first_name || msg.from?.username || 'Barista',
       cardMask: '', merchant: 'Mini Cafe HLA57',
-      payMethod: 'CASH', trxId: `CASH-${msg.message_id}`, apv: '',
+      payMethod: 'CASH', trxId: `CASH-${msg.message_id}-${Date.now()}`, apv: '',
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
