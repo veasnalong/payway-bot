@@ -73,6 +73,7 @@ async function getTransactions(chatId, dateKey) {
       .order('timestamp', { ascending: true });
 
     if (error) { console.error('❌ Supabase fetch error:', error.message); return []; }
+  console.log(`🔎 Fetched ${(data||[]).length} records for chat=${chatId} date=${dateKey}`);
 
     return (data || []).map(row => ({
       amount:      row.amount,
