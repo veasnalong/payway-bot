@@ -85,8 +85,58 @@ function getThisMonthDays() {
   return days;
 }
 
+// ── Cash Payment Listener ──────────────────────────────────────────────────────
+// Barista types: cash 6000 / cash ៛6000 / cash $2.50 / cash 2.50$
+function parseCashMessage(text, msg) {
+  if (!text) return null;
+  const lower = text.trim().toLowerCase();
+  if (!lower.startsWith('cash')) return null;
+
+  // Match: cash ៛6,000 | cash 6000 | cash $2.50
+  const hasDollar = text.includes('$');
+  const usdMatch = hasDollar && text.match(/cash\s*\$\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const khrMatch = !hasDollar && text.match(/cash\s*[៛]?\s*([\d,]+)/i);
+
+  // Prefer USD if $ symbol present
+  if (hasDollar && usdMatch) {
+    const amount = parseFloat(usdMatch[1].replace(/,/g, ''));
+    if (isNaN(amount) || amount <= 0) return null;
+    return {
+      amount, currency: 'USD',
+      payer: msg.from?.first_name || msg.from?.username || 'Barista',
+      cardMask: '', merchant: 'Mini Cafe HLA57',
+      payMethod: 'CASH', trxId: `CASH-${msg.message_id}`, apv: '',
+      dateTimeStr: new Date().toLocaleString('en-US', {
+        month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
+      }),
+      timestamp: new Date().toISOString(),
+      timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
+      messageId: msg.message_id,
+    };
+  }
+
+  if (!hasDollar && khrMatch) {
+    const amount = parseFloat(khrMatch[1].replace(/,/g, ''));
+    if (isNaN(amount) || amount <= 0) return null;
+    return {
+      amount, currency: 'KHR',
+      payer: msg.from?.first_name || msg.from?.username || 'Barista',
+      cardMask: '', merchant: 'Mini Cafe HLA57',
+      payMethod: 'CASH', trxId: `CASH-${msg.message_id}`, apv: '',
+      dateTimeStr: new Date().toLocaleString('en-US', {
+        month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
+      }),
+      timestamp: new Date().toISOString(),
+      timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
+      messageId: msg.message_id,
+    };
+  }
+
+  return null;
+}
+
 // ── ABA Payway message listener ────────────────────────────────────────────────
-function handleMsg(msg) {
+async function handleMsg(msg) {
   const chatId = msg.chat.id;
   const chatType = msg.chat.type;
 
@@ -109,6 +159,18 @@ function handleMsg(msg) {
     console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} in chat=${chatId}`);
   } else if (text.includes('paid by') || text.includes('ABA') || text.includes('KHR')) {
     console.log(`⚠️  ABA-like but not parsed — chat=${chatId}: ${text.slice(0, 150)}`);
+  }
+
+  // Check for cash payment entry by barista
+  const cashTxn = parseCashMessage(text, msg);
+  if (cashTxn) {
+    await store.addTransaction(chatId, cashTxn);
+    const symbol = cashTxn.currency === 'KHR' ? '៛' : '$';
+    const amt = cashTxn.currency === 'KHR'
+      ? cashTxn.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
+      : cashTxn.amount.toFixed(2);
+    console.log(`💵 Cash captured: ${symbol}${amt} by ${cashTxn.payer}`);
+    bot.sendMessage(chatId, `✅ Cash recorded: <b>${symbol}${amt}</b> by ${cashTxn.payer}`, { parse_mode: 'HTML' });
   }
 }
 
