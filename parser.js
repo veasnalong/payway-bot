@@ -89,14 +89,28 @@ function formatSummary(transactions, label, period) {
     byCurrency[t.currency].count++;
   });
 
-  // By payer
+  // Totals by payment method (per currency)
+  const byMethod = {};
+  transactions.forEach(t => {
+    const method = (t.payMethod || '').startsWith('ABA KHQR') ? 'ABA KHQR'
+      : (t.payMethod || '').startsWith('ABA PAY') ? 'ABA PAY'
+      : (t.payMethod || '').toUpperCase() === 'CASH' ? 'CASH'
+      : t.payMethod || 'OTHER';
+    if (!byMethod[method]) byMethod[method] = { totalKHR: 0, totalUSD: 0, count: 0 };
+    if (t.currency === 'KHR') byMethod[method].totalKHR += t.amount;
+    else byMethod[method].totalUSD += t.amount;
+    byMethod[method].count++;
+  });
+
+  // By payer (use KHR total for ranking, track per currency)
   const byPayer = {};
   transactions.forEach(t => {
-    if (!byPayer[t.payer]) byPayer[t.payer] = { total: 0, count: 0, currency: t.currency };
-    byPayer[t.payer].total += t.amount;
+    if (!byPayer[t.payer]) byPayer[t.payer] = { totalKHR: 0, totalUSD: 0, count: 0 };
+    if (t.currency === 'KHR') byPayer[t.payer].totalKHR += t.amount;
+    else byPayer[t.payer].totalUSD += t.amount;
     byPayer[t.payer].count++;
   });
-  const topPayers = Object.entries(byPayer).sort((a, b) => b[1].total - a[1].total);
+  const topPayers = Object.entries(byPayer).sort((a, b) => b[1].totalKHR - a[1].totalKHR);
   const uniquePayers = topPayers.length;
 
   // By merchant
@@ -135,13 +149,28 @@ function formatSummary(transactions, label, period) {
   }
   lines.push(``);
 
+  // By payment method
+  lines.push(`💳 <b>BY PAYMENT METHOD</b>`);
+  const methodOrder = ['ABA PAY', 'ABA KHQR', 'CASH', 'OTHER'];
+  const sortedMethods = Object.entries(byMethod).sort((a, b) => {
+    const ai = methodOrder.indexOf(a[0]), bi = methodOrder.indexOf(b[0]);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+  sortedMethods.forEach(([method, d]) => {
+    const icon = method === 'CASH' ? '💵' : method === 'ABA PAY' ? '📱' : method === 'ABA KHQR' ? '🔲' : '💳';
+    const amts = [d.totalKHR ? fmtAmount(d.totalKHR, 'KHR') : null, d.totalUSD ? fmtAmount(d.totalUSD, 'USD') : null].filter(Boolean).join('  ');
+    lines.push(`  ${icon} ${method}: <b>${amts}</b>  <i>×${d.count}</i>`);
+  });
+  lines.push(``);
+
   // Top payers
   lines.push(`<b>👤 PAYERS</b>`);
   topPayers.slice(0, 10).forEach(([name, d], i) => {
     const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
     const times = d.count > 1 ? ` ×${d.count}` : '';
+    const amts = [d.totalKHR ? fmtAmount(d.totalKHR, 'KHR') : null, d.totalUSD ? fmtAmount(d.totalUSD, 'USD') : null].filter(Boolean).join('  ');
     lines.push(`  ${rank} ${escapeHtml(name)}${times}`);
-    lines.push(`      └ <b>${fmtAmount(d.total, d.currency)}</b>`);
+    lines.push(`      └ <b>${amts}</b>`);
   });
   if (uniquePayers > 10) lines.push(`  <i>+ ${uniquePayers - 10} more payers</i>`);
   lines.push(``);
