@@ -20,8 +20,10 @@ create table if not exists aba_transactions (
 );
 
 -- Prevent duplicate messages
+-- Drop old index and recreate with date_key
+drop index if exists aba_transactions_unique;
 create unique index if not exists aba_transactions_unique
-  on aba_transactions (chat_id, message_id);
+  on aba_transactions (chat_id, message_id, date_key);
 
 -- Speed up date queries
 create index if not exists aba_transactions_date

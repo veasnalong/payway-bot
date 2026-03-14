@@ -34,10 +34,11 @@ async function addTransaction(chatId, transaction) {
       .select('id')
       .eq('chat_id', String(chatId))
       .eq('message_id', transaction.messageId)
+      .eq('date_key', dateKey)
       .maybeSingle();
 
     if (existing) {
-      console.log(`⚠️ Duplicate skipped: chat=${chatId} message_id=${transaction.messageId} payer=${transaction.payer}`);
+      console.log(`⚠️ Duplicate skipped: chat=${chatId} message_id=${transaction.messageId} date=${dateKey} payer=${transaction.payer}`);
       return;
     }
 
