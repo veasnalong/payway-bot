@@ -36,8 +36,12 @@ async function addTransaction(chatId, transaction) {
       .eq('message_id', transaction.messageId)
       .maybeSingle();
 
-    if (existing) return;
+    if (existing) {
+      console.log(`⚠️ Duplicate skipped: chat=${chatId} message_id=${transaction.messageId} payer=${transaction.payer}`);
+      return;
+    }
 
+    console.log(`💾 Inserting: chat=${chatId} msg=${transaction.messageId} payer=${transaction.payer} date=${dateKey}`);
     const { error } = await db.from(TABLE).insert({
       chat_id:      String(chatId),
       message_id:   transaction.messageId,

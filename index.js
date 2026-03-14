@@ -290,8 +290,13 @@ bot.onText(/\/list(@\w+)?$/, async (msg) => {
     const qId = storeId(msg.chat.id);
     console.log(`🔍 /list querying chat_id=${qId} date=${getTodayKey()}`);
     const transactions = await store.getTransactions(qId, getTodayKey());
-    await sendLong(chatId, formatDetailedList(transactions, 'Today'), { parse_mode: 'HTML' });
+    console.log(`📋 /list got ${transactions.length} transactions, sending to chat=${chatId}`);
+    const reply = formatDetailedList(transactions, 'Today');
+    console.log(`📋 reply length=${reply.length}`);
+    await sendLong(chatId, reply, { parse_mode: 'HTML' });
+    console.log(`📋 /list reply sent`);
   } catch (e) {
+    console.error('❌ /list error:', e.message);
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
   }
 });
