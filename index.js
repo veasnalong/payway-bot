@@ -114,7 +114,7 @@ function parseCashMessage(text, msg) {
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
-      timestamp: new Date().toLocaleString('en-CA', { timeZone: TIMEZONE }) + 'T00:00:00',
+      timestamp: new Date().toISOString(),
       timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
       messageId: msg.message_id,
     };
@@ -131,7 +131,7 @@ function parseCashMessage(text, msg) {
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
-      timestamp: new Date().toLocaleString('en-CA', { timeZone: TIMEZONE }) + 'T00:00:00',
+      timestamp: new Date().toISOString(),
       timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
       messageId: msg.message_id,
     };
