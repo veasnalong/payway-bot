@@ -26,6 +26,7 @@ if (missing.length > 0) {
   process.exit(1);
 }
 console.log('✅ Environment OK');
+console.log(`📦 STORE_CHAT_ID: ${STORE_CHAT_ID} | SOURCE: ${SOURCE_GROUP_ID} | TARGET: ${TARGET_GROUP_ID}`);
 
 // ── Bot init ───────────────────────────────────────────────────────────────────
 const bot = new TelegramBot(TOKEN, { polling: false });
@@ -249,7 +250,7 @@ bot.on('channel_post', handleAutoForward);
 bot.onText(/\/summary(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, getTodayKey());
+    const transactions = await store.getTransactions(STORE_CHAT_ID || msg.chat.id, getTodayKey());
     await sendLong(chatId, formatSummary(transactions, 'Today', getTodayKey()), { parse_mode: 'HTML' });
   } catch (e) {
     console.error('❌ /summary:', e.message);
@@ -261,7 +262,7 @@ bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getLastNDays(7);
-    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || chatId, d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || msg.chat.id, d)));
     await sendLong(chatId, formatSummary(all.flat(), 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -272,7 +273,7 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getThisMonthDays();
-    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || chatId, d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || msg.chat.id, d)));
     const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
     await sendLong(chatId, formatSummary(all.flat(), label, ''), { parse_mode: 'HTML' });
   } catch (e) {
@@ -283,7 +284,7 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, getTodayKey());
+    const transactions = await store.getTransactions(STORE_CHAT_ID || msg.chat.id, getTodayKey());
     await sendLong(chatId, formatDetailedList(transactions, 'Today'), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -293,7 +294,7 @@ bot.onText(/\/list(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, match[2]);
+    const transactions = await store.getTransactions(STORE_CHAT_ID || msg.chat.id, match[2]);
     await sendLong(chatId, formatDetailedList(transactions, match[2]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
