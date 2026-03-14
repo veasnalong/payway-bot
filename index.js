@@ -170,12 +170,13 @@ async function handleMsg(msg) {
   // Check for cash payment entry by barista
   const cashTxn = parseCashMessage(text, msg);
   if (cashTxn) {
-    await store.addTransaction(storeId(chatId), cashTxn);
+    const cashSaveId = storeId(chatId);
+    await store.addTransaction(cashSaveId, cashTxn);
     const symbol = cashTxn.currency === 'KHR' ? '៛' : '$';
     const amt = cashTxn.currency === 'KHR'
       ? cashTxn.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
       : cashTxn.amount.toFixed(2);
-    console.log(`💵 Cash captured: ${symbol}${amt} by ${cashTxn.payer}`);
+    console.log(`💵 Cash captured: ${symbol}${amt} by ${cashTxn.payer} → saved to chat=${cashSaveId}`);
     bot.sendMessage(chatId, `✅ Cash recorded: <b>${symbol}${amt}</b> by ${cashTxn.payer}`, { parse_mode: 'HTML' });
   }
 }
