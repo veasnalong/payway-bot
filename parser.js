@@ -210,7 +210,10 @@ function formatDetailedList(transactions, label) {
   lines.push(`<i>${transactions.length} record${transactions.length > 1 ? 's' : ''}</i>`);
   lines.push(``);
 
-  transactions.forEach((t, i) => {
+  // Sort by timestamp
+  const sorted = [...transactions].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  sorted.forEach((t, i) => {
     const num = String(i + 1).padStart(2, '0');
     lines.push(`<b>${num}│</b> <b>${fmtAmount(t.amount, t.currency)}</b>`);
     lines.push(`   <b>${escapeHtml(t.payer)}</b> <code>${escapeHtml(t.cardMask || '')}</code>`);
