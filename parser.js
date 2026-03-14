@@ -210,8 +210,15 @@ function formatDetailedList(transactions, label) {
   lines.push(`<i>${transactions.length} record${transactions.length > 1 ? 's' : ''}</i>`);
   lines.push(``);
 
-  // Sort by timestamp
-  const sorted = [...transactions].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  // Sort by dateTimeStr (handles both ABA and cash records correctly)
+  const parseTime = (str) => {
+    if (!str) return 0;
+    try {
+      // Format: "Mar 14, 11:36 AM" → parse with current year
+      return new Date(str + ' ' + new Date().getFullYear()).getTime();
+    } catch(e) { return 0; }
+  };
+  const sorted = [...transactions].sort((a, b) => parseTime(a.dateTimeStr) - parseTime(b.dateTimeStr));
 
   sorted.forEach((t, i) => {
     const num = String(i + 1).padStart(2, '0');
@@ -225,9 +232,11 @@ function formatDetailedList(transactions, label) {
 
   lines.push(``);
   lines.push(`${divider('─', 28)}`);
-  for (const [cur, total] of Object.entries(byCurrency)) {
-    lines.push(`💰 <b>TOTAL: ${fmtAmount(total, cur)}</b>`);
-  }
+  const totalParts = [
+    byCurrency['KHR'] ? `៛${byCurrency['KHR'].toLocaleString('en-US', { maximumFractionDigits: 0 })}` : null,
+    byCurrency['USD'] ? `$${byCurrency['USD'].toFixed(2)}` : null,
+  ].filter(Boolean);
+  lines.push(`💰 <b>TOTAL: ${totalParts.join('  ')}</b>`);
 
   return lines.join('\n');
 }
