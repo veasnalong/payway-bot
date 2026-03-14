@@ -11,6 +11,8 @@ const ALLOWED_GROUP_ID = process.env.GROUP_ID ? Number(process.env.GROUP_ID) : n
 const SOURCE_GROUP_ID = process.env.SOURCE_GROUP_ID ? Number(process.env.SOURCE_GROUP_ID) : null; // ABA Payway group
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID ? Number(process.env.TARGET_GROUP_ID) : null; // Your bot group
 const DAILY_REPORT_TIME = process.env.DAILY_REPORT_TIME || '18:00';
+// All data stored under SOURCE_GROUP_ID so commands in source group see everything
+const STORE_CHAT_ID = SOURCE_GROUP_ID || TARGET_GROUP_ID;
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
 // ── Validate env vars ──────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ function parseCashMessage(text, msg) {
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toLocaleString('en-CA', { timeZone: TIMEZONE }) + 'T00:00:00',
       timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
       messageId: msg.message_id,
     };
@@ -126,7 +128,7 @@ function parseCashMessage(text, msg) {
       dateTimeStr: new Date().toLocaleString('en-US', {
         month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE
       }),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toLocaleString('en-CA', { timeZone: TIMEZONE }) + 'T00:00:00',
       timeStr: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: TIMEZONE }),
       messageId: msg.message_id,
     };
@@ -155,8 +157,9 @@ async function handleMsg(msg) {
 
   const transaction = parseABAMessage(text, msg);
   if (transaction) {
-    store.addTransaction(chatId, transaction);
-    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} in chat=${chatId}`);
+    const saveChatId = STORE_CHAT_ID || chatId;
+    store.addTransaction(saveChatId, transaction);
+    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} → saved to chat=${saveChatId}`);
   } else if (text.includes('paid by') || text.includes('ABA') || text.includes('KHR')) {
     console.log(`⚠️  ABA-like but not parsed — chat=${chatId}: ${text.slice(0, 150)}`);
   }
@@ -164,7 +167,7 @@ async function handleMsg(msg) {
   // Check for cash payment entry by barista
   const cashTxn = parseCashMessage(text, msg);
   if (cashTxn) {
-    await store.addTransaction(chatId, cashTxn);
+    await store.addTransaction(STORE_CHAT_ID || chatId, cashTxn);
     const symbol = cashTxn.currency === 'KHR' ? '៛' : '$';
     const amt = cashTxn.currency === 'KHR'
       ? cashTxn.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
@@ -246,7 +249,7 @@ bot.on('channel_post', handleAutoForward);
 bot.onText(/\/summary(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(chatId, getTodayKey());
+    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, getTodayKey());
     await sendLong(chatId, formatSummary(transactions, 'Today', getTodayKey()), { parse_mode: 'HTML' });
   } catch (e) {
     console.error('❌ /summary:', e.message);
@@ -258,7 +261,7 @@ bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getLastNDays(7);
-    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || chatId, d)));
     await sendLong(chatId, formatSummary(all.flat(), 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -269,7 +272,7 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getThisMonthDays();
-    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(STORE_CHAT_ID || chatId, d)));
     const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
     await sendLong(chatId, formatSummary(all.flat(), label, ''), { parse_mode: 'HTML' });
   } catch (e) {
@@ -280,7 +283,7 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(chatId, getTodayKey());
+    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, getTodayKey());
     await sendLong(chatId, formatDetailedList(transactions, 'Today'), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -290,7 +293,7 @@ bot.onText(/\/list(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(chatId, match[2]);
+    const transactions = await store.getTransactions(STORE_CHAT_ID || chatId, match[2]);
     await sendLong(chatId, formatDetailedList(transactions, match[2]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -315,7 +318,7 @@ bot.onText(/\/help(@\w+)?$/, (msg) => {
 const [schedHour, schedMin] = DAILY_REPORT_TIME.split(':');
 cron.schedule(`${schedMin} ${schedHour} * * *`, async () => {
   const today = getTodayKey();
-  const chatIds = await store.getAllChatIds();
+  const chatIds = STORE_CHAT_ID ? [STORE_CHAT_ID] : await store.getAllChatIds();
   for (const chatId of chatIds) {
     try {
       const transactions = await store.getTransactions(chatId, today);
