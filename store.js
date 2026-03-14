@@ -36,8 +36,12 @@ async function addTransaction(chatId, transaction) {
       .eq('message_id', transaction.messageId)
       .maybeSingle();
 
-    if (existing) return;
+    if (existing) {
+      console.log(`⚠️ Duplicate skipped: chat=${chatId} message_id=${transaction.messageId} payer=${transaction.payer}`);
+      return;
+    }
 
+    console.log(`💾 Inserting: chat=${chatId} msg=${transaction.messageId} payer=${transaction.payer} date=${dateKey}`);
     const { error } = await db.from(TABLE).insert({
       chat_id:      String(chatId),
       message_id:   transaction.messageId,
@@ -73,6 +77,7 @@ async function getTransactions(chatId, dateKey) {
       .order('timestamp', { ascending: true });
 
     if (error) { console.error('❌ Supabase fetch error:', error.message); return []; }
+  console.log(`🔎 Fetched ${(data||[]).length} records for chat=${chatId} date=${dateKey}`);
 
     return (data || []).map(row => ({
       amount:      row.amount,
