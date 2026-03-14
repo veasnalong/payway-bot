@@ -10,7 +10,7 @@ const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 function parseABAMessage(text, msg) {
   if (!text) return null;
 
-  const masterPattern = /^([៛$])\s*([\d,]+(?:\.\d+)?)\s+paid by\s+(.+?)\s+\((\*\d+)\)\s+on\s+(.+?)\s+via\s+(ABA KHQR(?:\s*\([^)]+\))?|ABA PAY|ABA)\s+at\s+(.+?)\.\s+Trx\.\s*ID:\s*(\d+),\s*APV:\s*(\d+)/i;
+  const masterPattern = /^([៛$])\s*([\d,]+(?:\.\d+)?)\s+paid by\s+(.+?)\s+\((\*\d+)\)\s+on\s+(.+?)\s+via\s+(ABA KHQR(?:\s*\(.+?\))*|ABA PAY|ABA)\s+at\s+(.+?)\.\s+Trx\.\s*ID:\s*(\d+),\s*APV:\s*(\d+)/i;
 
   const m = text.match(masterPattern);
   if (!m) return null;
