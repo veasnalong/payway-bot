@@ -89,13 +89,11 @@ async function startUserbot() {
 
       console.log(`👀 Userbot saw ABA: ${text.slice(0, 80)}`);
 
-      await client.invoke(new Api.messages.ForwardMessages({
-        fromPeer: sourceEntity,
-        id:       [msg.id],
-        toPeer:   targetEntity,
-        randomId: [BigInt(Math.floor(Math.random() * 1e15))],
-        silent:   true,
-      }));
+      // Use sendMessage to copy instead of forward — avoids PEER_ID_INVALID
+      await client.sendMessage(targetEntity, {
+        message: text,
+        silent: true,
+      });
 
       console.log(`📤 Forwarded to target group`);
     } catch (e) {
