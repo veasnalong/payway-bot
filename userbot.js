@@ -1,7 +1,5 @@
 /**
  * userbot.js — GramJS userbot forwarder
- * Runs as your real Telegram account, reads @PayWayByABA_bot messages,
- * forwards them to TARGET_GROUP_ID where your bot captures them.
  */
 
 const { TelegramClient } = require('telegram');
@@ -12,8 +10,8 @@ const { Api } = require('telegram');
 const API_ID    = Number(process.env.TELEGRAM_API_ID);
 const API_HASH  = process.env.TELEGRAM_API_HASH;
 const SESSION   = process.env.TELEGRAM_SESSION || '';
-const SOURCE_ID = Number(process.env.SOURCE_GROUP_ID);
-const TARGET_ID = Number(process.env.TARGET_GROUP_ID);
+const SOURCE_ID = process.env.SOURCE_GROUP_ID;  // keep as string
+const TARGET_ID = process.env.TARGET_GROUP_ID;  // keep as string
 const ABA_BOT   = 'PayWayByABA_bot';
 
 async function startUserbot() {
@@ -26,7 +24,7 @@ async function startUserbot() {
     return;
   }
   if (!SESSION) {
-    console.error('❌ TELEGRAM_SESSION not set. Run `node generate_session.js` locally to get it.');
+    console.error('❌ TELEGRAM_SESSION not set. Run `node generate_session.js` locally.');
     return;
   }
 
@@ -38,38 +36,45 @@ async function startUserbot() {
   const me = await client.getMe();
   console.log(`👤 Userbot connected as: @${me.username || me.firstName}`);
 
-  // ── Resolve source and target entities properly ──────────────────────────────
+  // ── Fetch all dialogs to populate entity cache ─────────────────────────────
+  console.log('📋 Loading dialogs to resolve groups...');
+  await client.getDialogs({ limit: 100 });
+
+  // ── Resolve source and target by trying multiple formats ───────────────────
+  async function resolveEntity(idStr) {
+    const attempts = [
+      idStr,                                    // as-is: "-1001234567890"
+      Number(idStr),                            // as number
+      Math.abs(Number(idStr)),                  // positive: 1234567890
+      Number(idStr.replace('-100', '-')),       // strip -100 prefix
+    ];
+    for (const attempt of attempts) {
+      try {
+        const entity = await client.getEntity(attempt);
+        console.log(`✅ Resolved ${idStr} → ${entity.title || entity.username || attempt}`);
+        return entity;
+      } catch (e) {
+        // try next
+      }
+    }
+    throw new Error(`Could not resolve group ID: ${idStr}. Make sure your account is a member.`);
+  }
+
   let sourceEntity, targetEntity;
   try {
-    sourceEntity = await client.getEntity(SOURCE_ID);
-    console.log(`✅ Source group resolved: ${sourceEntity.title || SOURCE_ID}`);
+    sourceEntity = await resolveEntity(SOURCE_ID);
   } catch (e) {
-    // Try with -100 prefix for supergroups
-    try {
-      sourceEntity = await client.getEntity(Number(`-100${Math.abs(SOURCE_ID)}`));
-      console.log(`✅ Source group resolved: ${sourceEntity.title || SOURCE_ID}`);
-    } catch (e2) {
-      console.error('❌ Could not resolve SOURCE_GROUP_ID:', e2.message);
-      console.error('   Make sure your Telegram account is a member of the source group');
-      return;
-    }
+    console.error('❌ Source group:', e.message);
+    return;
   }
-
   try {
-    targetEntity = await client.getEntity(TARGET_ID);
-    console.log(`✅ Target group resolved: ${targetEntity.title || TARGET_ID}`);
+    targetEntity = await resolveEntity(TARGET_ID);
   } catch (e) {
-    try {
-      targetEntity = await client.getEntity(Number(`-100${Math.abs(TARGET_ID)}`));
-      console.log(`✅ Target group resolved: ${targetEntity.title || TARGET_ID}`);
-    } catch (e2) {
-      console.error('❌ Could not resolve TARGET_GROUP_ID:', e2.message);
-      console.error('   Make sure your Telegram account is a member of the target group');
-      return;
-    }
+    console.error('❌ Target group:', e.message);
+    return;
   }
 
-  // ── Listen for ABA messages in source group ──────────────────────────────────
+  // ── Listen for ABA messages ────────────────────────────────────────────────
   client.addEventHandler(async (event) => {
     const msg = event.message;
     if (!msg) return;
@@ -78,20 +83,18 @@ async function startUserbot() {
       const text = msg.text || msg.message || '';
       if (!text) return;
 
-      // Check sender is ABA bot
       const sender = await msg.getSender().catch(() => null);
       const senderUsername = (sender?.username || '').toLowerCase();
       if (senderUsername !== ABA_BOT.toLowerCase()) return;
 
       console.log(`👀 Userbot saw ABA: ${text.slice(0, 80)}`);
 
-      // Forward using resolved entities
       await client.invoke(new Api.messages.ForwardMessages({
         fromPeer: sourceEntity,
-        id: [msg.id],
-        toPeer: targetEntity,
-        randomId: [BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))],
-        silent: true,  // no notification
+        id:       [msg.id],
+        toPeer:   targetEntity,
+        randomId: [BigInt(Math.floor(Math.random() * 1e15))],
+        silent:   true,
       }));
 
       console.log(`📤 Forwarded to target group`);
@@ -100,7 +103,8 @@ async function startUserbot() {
     }
   }, new NewMessage({ chats: [sourceEntity.id] }));
 
-  console.log(`👂 Userbot listening for @${ABA_BOT} in: ${sourceEntity.title || SOURCE_ID}`);
+  console.log(`👂 Listening for @${ABA_BOT} in: ${sourceEntity.title || SOURCE_ID}`);
+  console.log(`📨 Forwarding to: ${targetEntity.title || TARGET_ID}`);
 }
 
 module.exports = { startUserbot };
