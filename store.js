@@ -44,10 +44,14 @@ async function addTransaction(chatId, transaction) {
       return;
     }
 
-    console.log(`💾 Inserting: chat=${chatId} msg=${transaction.messageId} payer=${transaction.payer} date=${dateKey}`);
+    // For CASH use a large unique number to avoid conflict with real Telegram message_ids
+    const insertMessageId = isCash
+      ? Math.abs(transaction.trxId.split('-').pop() % 2147483647) + 1000000000
+      : transaction.messageId;
+    console.log(`💾 Inserting: chat=${chatId} msg=${insertMessageId} payer=${transaction.payer} date=${dateKey} method=${transaction.payMethod}`);
     const { error } = await db.from(TABLE).insert({
       chat_id:      String(chatId),
-      message_id:   transaction.messageId,
+      message_id:   insertMessageId,
       date_key:     dateKey,
       amount:       transaction.amount,
       currency:     transaction.currency,
