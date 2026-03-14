@@ -11,10 +11,6 @@ const ALLOWED_GROUP_ID = process.env.GROUP_ID ? Number(process.env.GROUP_ID) : n
 const SOURCE_GROUP_ID = process.env.SOURCE_GROUP_ID ? Number(process.env.SOURCE_GROUP_ID) : null; // ABA Payway group
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID ? Number(process.env.TARGET_GROUP_ID) : null; // Your bot group
 const DAILY_REPORT_TIME = process.env.DAILY_REPORT_TIME || '18:00';
-// All data stored under SOURCE_GROUP_ID so commands in source group see everything
-const STORE_CHAT_ID = SOURCE_GROUP_ID || TARGET_GROUP_ID;
-// Always use this for DB queries regardless of which group command comes from
-function storeId(fallback) { return STORE_CHAT_ID || fallback; }
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Phnom_Penh';
 
 // ── Validate env vars ──────────────────────────────────────────────────────────
@@ -28,7 +24,6 @@ if (missing.length > 0) {
   process.exit(1);
 }
 console.log('✅ Environment OK');
-console.log(`📦 STORE_CHAT_ID: ${STORE_CHAT_ID} | SOURCE: ${SOURCE_GROUP_ID} | TARGET: ${TARGET_GROUP_ID}`);
 
 // ── Bot init ───────────────────────────────────────────────────────────────────
 const bot = new TelegramBot(TOKEN, { polling: false });
@@ -160,9 +155,8 @@ async function handleMsg(msg) {
 
   const transaction = parseABAMessage(text, msg);
   if (transaction) {
-    const saveChatId = STORE_CHAT_ID || chatId;
-    store.addTransaction(saveChatId, transaction);
-    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} → saved to chat=${saveChatId}`);
+    store.addTransaction(chatId, transaction);
+    console.log(`✅ Captured: ${transaction.payer} ${transaction.amount} ${transaction.currency} in chat=${chatId}`);
   } else if (text.includes('paid by') || text.includes('ABA') || text.includes('KHR')) {
     console.log(`⚠️  ABA-like but not parsed — chat=${chatId}: ${text.slice(0, 150)}`);
   }
@@ -170,13 +164,12 @@ async function handleMsg(msg) {
   // Check for cash payment entry by barista
   const cashTxn = parseCashMessage(text, msg);
   if (cashTxn) {
-    const cashSaveId = storeId(chatId);
-    await store.addTransaction(cashSaveId, cashTxn);
+    await store.addTransaction(chatId, cashTxn);
     const symbol = cashTxn.currency === 'KHR' ? '៛' : '$';
     const amt = cashTxn.currency === 'KHR'
       ? cashTxn.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })
       : cashTxn.amount.toFixed(2);
-    console.log(`💵 Cash captured: ${symbol}${amt} by ${cashTxn.payer} → saved to chat=${cashSaveId}`);
+    console.log(`💵 Cash captured: ${symbol}${amt} by ${cashTxn.payer}`);
     bot.sendMessage(chatId, `✅ Cash recorded: <b>${symbol}${amt}</b> by ${cashTxn.payer}`, { parse_mode: 'HTML' });
   }
 }
@@ -253,7 +246,7 @@ bot.on('channel_post', handleAutoForward);
 bot.onText(/\/summary(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(storeId(msg.chat.id), getTodayKey());
+    const transactions = await store.getTransactions(chatId, getTodayKey());
     await sendLong(chatId, formatSummary(transactions, 'Today', getTodayKey()), { parse_mode: 'HTML' });
   } catch (e) {
     console.error('❌ /summary:', e.message);
@@ -265,7 +258,7 @@ bot.onText(/\/summary_week(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getLastNDays(7);
-    const all = await Promise.all(days.map(d => store.getTransactions(storeId(msg.chat.id), d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
     await sendLong(chatId, formatSummary(all.flat(), 'Last 7 Days', days[0] + ' → ' + days[days.length - 1]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -276,7 +269,7 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const days = getThisMonthDays();
-    const all = await Promise.all(days.map(d => store.getTransactions(storeId(msg.chat.id), d)));
+    const all = await Promise.all(days.map(d => store.getTransactions(chatId, d)));
     const label = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: TIMEZONE });
     await sendLong(chatId, formatSummary(all.flat(), label, ''), { parse_mode: 'HTML' });
   } catch (e) {
@@ -287,16 +280,9 @@ bot.onText(/\/summary_month(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?$/, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const qId = storeId(msg.chat.id);
-    console.log(`🔍 /list querying chat_id=${qId} date=${getTodayKey()}`);
-    const transactions = await store.getTransactions(qId, getTodayKey());
-    console.log(`📋 /list got ${transactions.length} transactions, sending to chat=${chatId}`);
-    const reply = formatDetailedList(transactions, 'Today');
-    console.log(`📋 reply length=${reply.length}`);
-    await sendLong(chatId, reply, { parse_mode: 'HTML' });
-    console.log(`📋 /list reply sent`);
+    const transactions = await store.getTransactions(chatId, getTodayKey());
+    await sendLong(chatId, formatDetailedList(transactions, 'Today'), { parse_mode: 'HTML' });
   } catch (e) {
-    console.error('❌ /list error:', e.message);
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
   }
 });
@@ -304,7 +290,7 @@ bot.onText(/\/list(@\w+)?$/, async (msg) => {
 bot.onText(/\/list(@\w+)?\s+(\d{4}-\d{2}-\d{2})/, async (msg, match) => {
   const chatId = msg.chat.id;
   try {
-    const transactions = await store.getTransactions(storeId(msg.chat.id), match[2]);
+    const transactions = await store.getTransactions(chatId, match[2]);
     await sendLong(chatId, formatDetailedList(transactions, match[2]), { parse_mode: 'HTML' });
   } catch (e) {
     bot.sendMessage(chatId, '⚠️ Error: ' + e.message);
@@ -329,7 +315,7 @@ bot.onText(/\/help(@\w+)?$/, (msg) => {
 const [schedHour, schedMin] = DAILY_REPORT_TIME.split(':');
 cron.schedule(`${schedMin} ${schedHour} * * *`, async () => {
   const today = getTodayKey();
-  const chatIds = STORE_CHAT_ID ? [STORE_CHAT_ID] : await store.getAllChatIds();
+  const chatIds = await store.getAllChatIds();
   for (const chatId of chatIds) {
     try {
       const transactions = await store.getTransactions(chatId, today);
