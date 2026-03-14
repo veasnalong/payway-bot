@@ -89,8 +89,8 @@ async function startUserbot() {
 
       console.log(`👀 Userbot saw ABA: ${text.slice(0, 80)}`);
 
-      // Use sendMessage to copy instead of forward — avoids PEER_ID_INVALID
-      await client.sendMessage(targetEntity, {
+      // Send message using target group's string ID directly
+      await client.sendMessage(TARGET_ID, {
         message: text,
         silent: true,
       });
